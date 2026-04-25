@@ -1,7 +1,10 @@
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from stb_reader import STBClient
 from .config import Settings
+
+logging.basicConfig(level=logging.DEBUG)
 
 
 @asynccontextmanager
