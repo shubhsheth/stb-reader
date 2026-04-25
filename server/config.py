@@ -9,4 +9,5 @@ class Settings(BaseSettings):
     stb_serial: str = "000000000000"
     stb_lang: str = "en"
     stb_timezone: str = "Europe/London"
+    stb_portal_path: str = "stalker_portal/c/portal.php"
     port: int = 8000

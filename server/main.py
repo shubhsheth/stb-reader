@@ -13,6 +13,7 @@ async def lifespan(app: FastAPI):
         serial=settings.stb_serial,
         lang=settings.stb_lang,
         timezone=settings.stb_timezone,
+        portal_path=settings.stb_portal_path,
     )
     client.authenticate()
     app.state.client = client

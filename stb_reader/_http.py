@@ -6,17 +6,18 @@ _X_USER_AGENT = "Model: MAG200; Link: WiFi"
 
 
 class STBSession:
-    def __init__(self, base_url: str, mac: str, serial: str, lang: str, timezone: str) -> None:
+    def __init__(self, base_url: str, mac: str, serial: str, lang: str, timezone: str, portal_path: str = "stalker_portal/c/portal.php") -> None:
         self.base_url = base_url.rstrip("/")
         self.mac = mac
         self.serial = serial
         self.lang = lang
         self.timezone = timezone
+        self.portal_path = portal_path.strip("/")
         self.token = ""
         self._session = requests.Session()
 
     def get(self, type: str, action: str, **params) -> dict:
-        url = f"{self.base_url}/stalker_portal/c/portal.php"
+        url = f"{self.base_url}/{self.portal_path}"
         query = {"JsHttpRequest": "1-xml", "type": type, "action": action, **params}
         headers = {
             "Authorization": f"Bearer {self.token}",
