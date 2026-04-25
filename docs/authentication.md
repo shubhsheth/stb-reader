@@ -20,8 +20,6 @@ Query parameters:
 |-----------|-------|-------|
 | `type` | `stb` | |
 | `action` | `handshake` | |
-| `prehash` | `0` | |
-| `token` | _(empty string)_ | Empty on first request; may be reused on reconnect |
 | `JsHttpRequest` | `1-xml` | Required on all requests |
 
 Headers:
@@ -30,17 +28,17 @@ Headers:
 |--------|---------|
 | `User-Agent` | `Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG250 stbapp ver: 4 rev: 2116 Mobile Safari/533.3` |
 | `X-User-Agent` | `Model: MAG250; Link: Ethernet` |
-| `Cookie` | `PHPSESSID=null; sn=022017J023063; mac=00:1A:79:18:05:75; stb_lang=en; timezone=Europe/London` |
+| `Cookie` | `mac=00:1A:79:18:05:75; stb_lang=en; timezone=Europe/London` |
 
 Cookie fields:
 
 | Field | Example | Notes |
 |-------|---------|-------|
-| `PHPSESSID` | `null` | Literal string `null` on first request |
-| `sn` | `022017J023063` | Device serial number |
 | `mac` | `00:1A:79:18:05:75` | Device MAC address |
 | `stb_lang` | `en` | UI language code |
 | `timezone` | `Europe/London` | IANA timezone name |
+
+`PHPSESSID` is **not** manually set. The server issues a `Set-Cookie: PHPSESSID=…` on this response; the HTTP client must store it and forward it on all subsequent requests automatically.
 
 **Response**
 
@@ -58,9 +56,11 @@ Response fields:
 | Field | Type | Notes |
 |-------|------|-------|
 | `token` | string | Session token; include as `Authorization: Bearer {token}` on all subsequent requests. If empty, the token sent in the request was accepted as-is. |
-| `random` | string | Optional random value; purpose varies by portal version. **[needs verification]** |
+| `random` | string | Optional. If present: (1) compute `signature = SHA256(random).hexdigest().upper()`; (2) echo the raw value back as both `X-Random` and `Random` headers on every subsequent request. Portals that issue `random` will reject content requests missing these headers. |
 
-**Source:** [`erkexzcx/stalkerhek` — authentication.go](https://github.com/erkexzcx/stalkerhek/blob/master/stalker/authentication.go)
+**Sources:**
+- [`erkexzcx/stalkerhek` — authentication.go](https://github.com/erkexzcx/stalkerhek/blob/master/stalker/authentication.go)
+- [`LegendaryFire/magplex` — device.py](https://github.com/LegendaryFire/magplex/blob/master/magplex/device/device.py)
 
 ---
 

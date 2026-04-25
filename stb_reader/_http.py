@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import urlparse
 import requests
 from .exceptions import STBError
 
@@ -17,23 +18,25 @@ class STBSession:
         self.timezone = timezone
         self.portal_path = portal_path.strip("/")
         self.token = ""
+        self.signature = ""
+        self.extra_headers: dict = {}
+        self._cookies = {"stb_lang": lang, "mac": mac, "timezone": timezone}
+        parsed = urlparse(self.base_url)
+        self._base_headers = {
+            "User-Agent": _USER_AGENT,
+            "X-User-Agent": _X_USER_AGENT,
+            "Accept-Language": "en,*",
+            "Connection": "Keep-Alive",
+            "Host": parsed.hostname,
+            "Referer": self.base_url + "/",
+        }
         self._session = requests.Session()
 
     def get(self, type: str, action: str, **params) -> dict:
         url = f"{self.base_url}/{self.portal_path}"
         query = {"JsHttpRequest": "1-xml", "type": type, "action": action, **params}
-        headers = {
-            "Authorization": f"Bearer {self.token}",
-            "User-Agent": _USER_AGENT,
-            "X-User-Agent": _X_USER_AGENT,
-            "Cookie": (
-                f"mac={self.mac}; "
-                f"lang={self.lang}; "
-                f"timezone={self.timezone}; "
-                f"PHPSESSID=null"
-            ),
-        }
-        resp = self._session.get(url, params=query, headers=headers)
+        headers = {**self._base_headers, "Authorization": f"Bearer {self.token}", **self.extra_headers}
+        resp = self._session.get(url, params=query, headers=headers, cookies=self._cookies)
         logger.debug("Response [%s %s]: %s", resp.status_code, action, resp.text[:500])
         if not resp.ok:
             raise STBError(f"HTTP {resp.status_code}: {resp.text[:200]}")
