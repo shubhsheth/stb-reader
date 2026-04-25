@@ -43,12 +43,14 @@ def test_user_agent_headers(mocked, session):
 
 
 def test_cookie_header(mocked, session):
+    session.token = "mytoken"
     mocked.add(responses_lib.GET, _portal_url(), json={"js": {}})
     session.get("stb", "handshake")
     cookie = mocked.calls[0].request.headers["Cookie"]
     assert f"mac={MAC}" in cookie
     assert f"stb_lang={LANG}" in cookie
     assert f"timezone={TIMEZONE}" in cookie
+    assert "token=mytoken" in cookie
 
 
 def test_js_unwrapping(mocked, session):

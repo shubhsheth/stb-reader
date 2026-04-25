@@ -47,9 +47,9 @@ Every request after the initial handshake must include these headers:
 | `Connection` | `Keep-Alive` | |
 | `Host` | `192.168.1.10` | Hostname of the portal (no port) |
 | `Referer` | `http://192.168.1.10:8080/` | Portal base URL with trailing slash |
-| `Cookie` | `mac=00:1A:79:18:05:75; stb_lang=en; timezone=Europe/London` | MAC address, language, timezone |
+| `Cookie` | `mac=00:1A:79:18:05:75; stb_lang=en; timezone=Europe/London; token=C00F…` | MAC address, language, timezone, and session token |
 
-The `Cookie` header carries the device's MAC address. Some portals use MAC address filtering and will reject requests from unrecognised MACs.
+The `Cookie` header carries both the device's MAC address and the session token. Some portals validate `$_COOKIE['token']` rather than (or in addition to) the `Authorization` header, so the token must appear in both places.
 
 If the handshake response included a `random` value, all subsequent requests must also include:
 

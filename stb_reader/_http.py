@@ -35,6 +35,7 @@ class STBSession:
     def get(self, type: str, action: str, **params) -> dict:
         url = f"{self.base_url}/{self.portal_path}"
         query = {"JsHttpRequest": "1-xml", "type": type, "action": action, **params}
+        self._cookies["token"] = self.token
         headers = {**self._base_headers, "Authorization": f"Bearer {self.token}", **self.extra_headers}
         resp = self._session.get(url, params=query, headers=headers, cookies=self._cookies)
         logger.debug("Response [%s %s]: %s", resp.status_code, action, resp.text[:500])
