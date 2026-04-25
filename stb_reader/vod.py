@@ -38,6 +38,7 @@ class VODService:
             p=page,
             sortby=sort,
             fav=int(fav),
+            not_ended=0,
         )
         items = [
             Content(

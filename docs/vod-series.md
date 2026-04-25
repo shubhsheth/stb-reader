@@ -79,7 +79,7 @@ Query parameters:
 | `category` | `{category_id}` | Category ID from `get_categories`. Omit or leave empty for all content. |
 | `p` | `1` | Page number, **1-indexed** |
 | `sortby` | `added` | Sort order: `added`, `popular`, `rating`, `name` |
-| `not_ended` | `0` | `1` to exclude finished/complete series **[needs verification]** |
+| `not_ended` | `0` | `1` to exclude finished/complete series |
 | `fav` | `0` | `1` to return only favourited items |
 | `JsHttpRequest` | `1-xml` | |
 

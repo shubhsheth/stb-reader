@@ -19,6 +19,7 @@ class STBClient:
 
     def __post_init__(self) -> None:
         self._session = STBSession(self.base_url, self.mac, self.serial, self.lang, self.timezone, self.portal_path)
+        self._session.reauth_fn = self.authenticate
         self.live_tv = ITVService(self._session)
         self.vod = VODService(self._session)
 
