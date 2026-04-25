@@ -18,6 +18,9 @@ class STBSession:
         self.portal_path = portal_path.strip("/")
         self.token = ""
         self._session = requests.Session()
+        self._session.cookies.set("mac", mac)
+        self._session.cookies.set("lang", lang)
+        self._session.cookies.set("timezone", timezone)
 
     def get(self, type: str, action: str, **params) -> dict:
         url = f"{self.base_url}/{self.portal_path}"
@@ -26,12 +29,6 @@ class STBSession:
             "Authorization": f"Bearer {self.token}",
             "User-Agent": _USER_AGENT,
             "X-User-Agent": _X_USER_AGENT,
-            "Cookie": (
-                f"mac={self.mac}; "
-                f"lang={self.lang}; "
-                f"timezone={self.timezone}; "
-                f"PHPSESSID=null"
-            ),
         }
         resp = self._session.get(url, params=query, headers=headers)
         logger.debug("Response [%s %s]: %s", resp.status_code, action, resp.text[:500])

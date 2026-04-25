@@ -49,7 +49,6 @@ def test_cookie_header(mocked, session):
     assert f"mac={MAC}" in cookie
     assert f"lang={LANG}" in cookie
     assert f"timezone={TIMEZONE}" in cookie
-    assert "PHPSESSID" in cookie
 
 
 def test_js_unwrapping(mocked, session):
