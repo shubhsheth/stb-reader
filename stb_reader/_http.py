@@ -1,5 +1,8 @@
+import logging
 import requests
 from .exceptions import STBError
+
+logger = logging.getLogger(__name__)
 
 _USER_AGENT = "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
 _X_USER_AGENT = "Model: MAG200; Link: WiFi"
@@ -31,6 +34,7 @@ class STBSession:
             ),
         }
         resp = self._session.get(url, params=query, headers=headers)
+        logger.debug("Response [%s %s]: %s", resp.status_code, action, resp.text[:500])
         if not resp.ok:
             raise STBError(f"HTTP {resp.status_code}: {resp.text[:200]}")
         try:
