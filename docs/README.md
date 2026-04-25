@@ -43,9 +43,20 @@ Every request after the initial handshake must include these headers:
 | `Authorization` | `Bearer C00F7332ED272F00D5FD3E82F567A282` | Token obtained from handshake |
 | `User-Agent` | `Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG250 stbapp ver: 4 rev: 2116 Mobile Safari/533.3` | STB browser UA |
 | `X-User-Agent` | `Model: MAG250; Link: Ethernet` | STB model and connection type |
+| `Accept-Language` | `en,*` | |
+| `Connection` | `Keep-Alive` | |
+| `Host` | `192.168.1.10` | Hostname of the portal (no port) |
+| `Referer` | `http://192.168.1.10:8080/` | Portal base URL with trailing slash |
 | `Cookie` | `mac=00:1A:79:18:05:75; stb_lang=en; timezone=Europe/London` | MAC address, language, timezone |
 
 The `Cookie` header carries the device's MAC address. Some portals use MAC address filtering and will reject requests from unrecognised MACs.
+
+If the handshake response included a `random` value, all subsequent requests must also include:
+
+| Header | Value | Notes |
+|--------|-------|-------|
+| `X-Random` | _(raw random string from handshake)_ | Echoed back verbatim |
+| `Random` | _(raw random string from handshake)_ | Same value, duplicate header name |
 
 ---
 
@@ -84,5 +95,6 @@ All schemas in this documentation are derived from the following open-source rep
 - [`Cyogenus/IPTV-MAC-STALKER-PLAYER-BY-MY-1`](https://github.com/Cyogenus/IPTV-MAC-STALKER-PLAYER-BY-MY-1) — Standalone Python player
 - [`agsimeonov/StalkerTalker`](https://github.com/agsimeonov/StalkerTalker) — Python client
 - [`DimitarCC/iptv-m3u-reader`](https://github.com/DimitarCC/iptv-m3u-reader) — Series field identification
+- [`LegendaryFire/magplex`](https://github.com/LegendaryFire/magplex) — Python STB emulator; source of `random`/signature/header details
 
 Entries marked **[needs verification]** have ambiguity across sources and should be confirmed against live traffic.
