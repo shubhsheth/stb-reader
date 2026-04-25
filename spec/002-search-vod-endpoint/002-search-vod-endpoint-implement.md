@@ -100,16 +100,15 @@
 - Verify: `python -m pytest tests/ -v --tb=short`
 - Files: `tests/test_vod_cache.py`, `tests/test_server.py`
 
-## Task G — Create `AGENTS.md`
+## Task G — Update `AGENTS.md`
 
-- [ ] Create `AGENTS.md` at the repo root documenting:
+- [ ] Update `AGENTS.md` at the repo root to document:
   - Overview of the server and its two main route groups (`/live-tv`, `/vod`)
   - The VOD cache: what it is, where the SQLite file lives, how to configure
     `VOD_CACHE_DB_PATH` and `VOD_CACHE_SYNC_INTERVAL`
   - The new `GET /vod/search?query=<str>` endpoint (params, response shape,
     503-when-empty behaviour)
   - How to run the server and tests
-- Acceptance: `AGENTS.md` exists at the repo root and covers all four bullet
-  points above.
+- Acceptance: `AGENTS.md` covers all four bullet points above.
 - Verify: manual review of the file.
 - Files: `AGENTS.md`
