@@ -47,7 +47,7 @@ def test_cookie_header(mocked, session):
     session.get("stb", "handshake")
     cookie = mocked.calls[0].request.headers["Cookie"]
     assert f"mac={MAC}" in cookie
-    assert f"lang={LANG}" in cookie
+    assert f"stb_lang={LANG}" in cookie
     assert f"timezone={TIMEZONE}" in cookie
 
 
