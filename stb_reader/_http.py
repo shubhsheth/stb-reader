@@ -33,4 +33,7 @@ class STBSession:
         resp = self._session.get(url, params=query, headers=headers)
         if not resp.ok:
             raise STBError(f"HTTP {resp.status_code}: {resp.text[:200]}")
-        return resp.json()["js"]
+        try:
+            return resp.json()["js"]
+        except Exception:
+            raise STBError(f"Invalid JSON response (status {resp.status_code}): {resp.text[:200]}")
