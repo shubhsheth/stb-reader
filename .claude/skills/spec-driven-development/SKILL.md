@@ -192,9 +192,17 @@ Break the plan into discrete, implementable tasks:
   - Files: [Which files will be touched]
 ```
 
+**Every task list must end with a documentation update task:**
+```markdown
+- [ ] Task: Update Documentation
+  - Acceptance: `AGENTS.md` updated to reflect any new commands, endpoints, models, or boundaries introduced by this feature; relevant `docs/` files updated or created to describe new behavior; no stale references remain in either file
+  - Verify: Review `AGENTS.md` and affected `docs/*.md` for accuracy
+  - Files: `AGENTS.md`, `docs/<relevant>.md`
+```
+
 ### Phase 4: Implement
 
-Execute tasks one at a time following `incremental-implementation` and `test-driven-development` skills. Use `context-engineering` to load the right spec sections and source files at each step rather than flooding the agent with the entire spec.
+Execute tasks one at a time following `incremental-implementation` and `test-driven-development` skills. Use `context-engineering` to load the right spec sections and source files at each step rather than flooding the agent with the entire spec. The final task of every implement phase is always to update `AGENTS.md` and relevant `docs/` files.
 
 ## Keeping the Spec Alive
 
