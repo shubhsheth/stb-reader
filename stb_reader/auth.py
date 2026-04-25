@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 
 def handshake(session: "STBSession") -> str:
-    data = session.get("stb", "handshake", token="")
+    data = session.get("stb", "handshake")
     token = data.get("token", "")
     if not token:
         raise AuthError("handshake returned no token")

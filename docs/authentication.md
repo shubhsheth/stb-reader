@@ -20,8 +20,6 @@ Query parameters:
 |-----------|-------|-------|
 | `type` | `stb` | |
 | `action` | `handshake` | |
-| `prehash` | `0` | |
-| `token` | _(empty string)_ | Empty on first request; may be reused on reconnect |
 | `JsHttpRequest` | `1-xml` | Required on all requests |
 
 Headers:
