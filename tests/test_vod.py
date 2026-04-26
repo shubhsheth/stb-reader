@@ -110,6 +110,7 @@ def test_get_stream_url_returns_clean_url():
     assert url == "http://cdn/movie.mp4"
 
 
+
 @responses_lib.activate
 def test_get_stream_url_raises_stream_error():
     responses_lib.add(
@@ -154,6 +155,49 @@ def test_get_stream_url_by_episode_id_finds_episode():
     svc = VODService(_make_session())
     url = svc.get_stream_url_by_episode_id("55", "10")
     assert url == "http://ep55"
+
+
+@responses_lib.activate
+def test_get_stream_url_by_episode_id_constructs_cmd_when_missing():
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "1", "name": "S1", "video_id": "200"}]}})
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "55", "name": "Ep1", "series_number": "1"}]}})
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"cmd": "http://cdn/stream.m3u8", "error": ""}})
+    svc = VODService(_make_session())
+    url = svc.get_stream_url_by_episode_id("55", "10")
+    assert url == "http://cdn/stream.m3u8"
+    assert "cmd=%2Fmedia%2F55.mpg" in responses_lib.calls[2].request.url
+
+
+@responses_lib.activate
+def test_open_episode_stream_proxies_via_token_url():
+    # get_seasons
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "1", "name": "S1", "video_id": "200"}]}})
+    # get_episodes (no cmd field, so /media/{id}.mpg is constructed)
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "55", "name": "Ep1", "series_number": "1"}]}})
+    # create_link with /media/55.mpg returns ?token=
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"cmd": "?token=abc123", "error": ""}})
+    # open_stream fetches the token URL (no session token cookie)
+    responses_lib.add(responses_lib.GET, _portal_url(), status=200, body=b"video-bytes", headers={"Content-Type": "video/mp2t"})
+    svc = VODService(_make_session())
+    resp = svc.open_episode_stream("55", "10")
+    assert resp.status_code == 200
+    assert "cmd=%2Fmedia%2F55.mpg" in responses_lib.calls[2].request.url
+    assert "token=abc123" in responses_lib.calls[3].request.url
+
+
+@responses_lib.activate
+def test_open_episode_stream_proxies_cdn_url():
+    # get_seasons
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "1", "name": "S1", "video_id": "200"}]}})
+    # get_episodes (episode has its own cmd)
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "55", "name": "Ep1", "series_number": "1", "cmd": "http://ep-cmd"}]}})
+    # create_link returns full CDN URL
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"cmd": "ffmpeg http://cdn/stream.m3u8", "error": ""}})
+    # open_url fetches CDN directly
+    responses_lib.add(responses_lib.GET, "http://cdn/stream.m3u8", status=200, body=b"video-bytes", headers={"Content-Type": "application/x-mpegURL"})
+    svc = VODService(_make_session())
+    resp = svc.open_episode_stream("55", "10")
+    assert resp.status_code == 200
 
 
 @responses_lib.activate

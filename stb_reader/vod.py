@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
+import requests
 from .models import Category, Content, Season, Episode, PagedResult
 from .exceptions import STBError, StreamError
 from .live_tv import _clean_url
@@ -122,5 +123,22 @@ class VODService:
             episodes = self.get_episodes(series_id, season.id)
             for ep in episodes:
                 if ep.id == str(episode_id):
-                    return self.get_stream_url(ep.cmd)
+                    cmd = ep.cmd or f"/media/{ep.id}.mpg"
+                    return self.get_stream_url(cmd)
+        raise STBError("episode not found")
+
+    def open_episode_stream(self, episode_id: str, series_id: str) -> requests.Response:
+        seasons = self.get_seasons(series_id)
+        for season in seasons:
+            episodes = self.get_episodes(series_id, season.id)
+            for ep in episodes:
+                if ep.id == str(episode_id):
+                    cmd = ep.cmd or f"/media/{ep.id}.mpg"
+                    raw = self._s.get("vod", "create_link", cmd=cmd)
+                    if raw.get("error"):
+                        raise StreamError(raw["error"])
+                    url = _clean_url(raw.get("cmd", raw.get("url", "")))
+                    if url.startswith("?"):
+                        return self._s.open_stream(url)
+                    return self._s.open_url(url)
         raise STBError("episode not found")

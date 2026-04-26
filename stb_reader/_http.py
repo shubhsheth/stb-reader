@@ -2,7 +2,7 @@ import logging
 from collections.abc import Callable
 from urllib.parse import urlparse
 import requests
-from .exceptions import AuthError, STBError
+from .exceptions import AuthError, STBError, StreamError
 
 logger = logging.getLogger(__name__)
 
@@ -59,3 +59,32 @@ class STBSession:
             return resp.json()["js"]
         except Exception:
             raise STBError(f"Invalid JSON response (status {resp.status_code}): {resp.text[:200]}")
+
+    def open_url(self, url: str) -> requests.Response:
+        """Fetch a full URL for streaming (no portal auth needed, e.g. CDN URLs)."""
+        resp = self._session.get(url, stream=True)
+        logger.debug("Stream response [%s]: %s", resp.status_code, resp.headers.get("content-type"))
+        if not resp.ok:
+            raise StreamError(f"stream fetch failed ({resp.status_code})")
+        return resp
+
+    def open_stream(self, cmd: str) -> requests.Response:
+        """Open a streaming request for a portal-relative ?token= URL.
+
+        Uses only base MAG device headers (no Authorization/X-Random) so
+        load.php sees a genuine STB stream request rather than an API call.
+        Session token travels in Cookie: token= for session validation;
+        play token travels in the URL (?token=) for media lookup.
+        """
+        full_url = f"{self.base_url}/{self.portal_path}{cmd}"
+        self._cookies["token"] = self.token
+        resp = self._session.get(full_url, headers=self._base_headers, cookies=self._cookies, stream=True)
+        ct = resp.headers.get("content-type", "")
+        logger.debug("Stream response [%s]: %s", resp.status_code, ct)
+        if not resp.ok:
+            raise StreamError(f"stream fetch failed ({resp.status_code})")
+        if "json" in ct:
+            body = resp.json()
+            logger.error("load.php stream JSON: %s", body)
+            raise StreamError(f"portal rejected stream: {body}")
+        return resp
