@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
-from stb_reader.models import Genre, Channel, Category, Content, Season, Episode, PagedResult
+from stb_reader.models import Genre, Channel, Category, Content, Season, Episode, EpisodeFile, PagedResult
 from stb_reader.exceptions import STBError, StreamError
 
 
@@ -166,4 +166,43 @@ class TestVOD:
         tc, mock = test_client
         mock.vod.get_stream_url_by_episode_id.side_effect = StreamError("nothing_to_play")
         resp = tc.get("/vod/episodes/1/stream?series_id=10", follow_redirects=False)
+        assert resp.status_code == 502
+
+    def test_get_episode_files_returns_list(self, test_client):
+        tc, mock = test_client
+        mock.vod.get_episode_files.return_value = [
+            EpisodeFile(id="1", name="English / HD (1080p)", cmd="/media/file_1.mpg"),
+            EpisodeFile(id="2", name="English / SD (480p)", cmd="/media/file_2.mpg"),
+        ]
+        resp = tc.get("/vod/content/10/seasons/1/episodes/55/files")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert data[0]["id"] == "1"
+        assert data[0]["name"] == "English / HD (1080p)"
+
+    def test_get_episode_files_returns_empty(self, test_client):
+        tc, mock = test_client
+        mock.vod.get_episode_files.return_value = []
+        resp = tc.get("/vod/content/10/seasons/1/episodes/55/files")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_get_episode_file_stream_redirects(self, test_client):
+        tc, mock = test_client
+        mock.vod.get_stream_url_by_file_id.return_value = "http://cdn/hd.m3u8"
+        resp = tc.get("/vod/content/10/seasons/1/episodes/55/files/1/stream", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "http://cdn/hd.m3u8"
+
+    def test_get_episode_file_stream_404_when_not_found(self, test_client):
+        tc, mock = test_client
+        mock.vod.get_stream_url_by_file_id.side_effect = STBError("file not found")
+        resp = tc.get("/vod/content/10/seasons/1/episodes/55/files/999/stream", follow_redirects=False)
+        assert resp.status_code == 404
+
+    def test_get_episode_file_stream_502_on_stream_error(self, test_client):
+        tc, mock = test_client
+        mock.vod.get_stream_url_by_file_id.side_effect = StreamError("nothing_to_play")
+        resp = tc.get("/vod/content/10/seasons/1/episodes/55/files/1/stream", follow_redirects=False)
         assert resp.status_code == 502

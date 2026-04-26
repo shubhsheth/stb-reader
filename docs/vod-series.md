@@ -275,6 +275,65 @@ Query parameters:
 
 ---
 
+## Get Ordered List — Files (Quality Variants)
+
+For a specific episode, retrieve the list of available quality/language file variants
+before creating a link. Pass non-zero `movie_id`, `season_id`, **and** `episode_id` to
+trigger this level. The portal's `getOrderedList` branches to `getFilesList` internally.
+
+**Request**
+
+```
+GET {base_url}/stalker_portal/c/portal.php
+```
+
+Query parameters:
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| `type` | `vod` | |
+| `action` | `get_ordered_list` | |
+| `movie_id` | `{series_id}` | The `id` from the content list item |
+| `season_id` | `{season_id}` | The `id` from the seasons response |
+| `episode_id` | `{episode_id}` | The `id` from the episodes response — **must be non-zero** |
+| `JsHttpRequest` | `1-xml` | |
+
+**Response**
+
+```json
+{
+  "js": {
+    "total_items": 2,
+    "data": [
+      {
+        "id": "1",
+        "name": "English / HD (1080p)",
+        "cmd": "/media/file_1.mpg"
+      },
+      {
+        "id": "2",
+        "name": "English / SD (480p)",
+        "cmd": "/media/file_2.mpg"
+      }
+    ]
+  }
+}
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | string | File identifier |
+| `name` | string | Human-readable label combining language and quality, e.g. `"English / HD (1080p)"` |
+| `cmd` | string | Streaming command; pass to `create_link` |
+
+If the portal returns only one file, quality selection UI can be skipped and the single
+`cmd` passed directly to `create_link`. An empty `data` array means no files are available.
+
+**Sources:**
+- [`iptvhakr/stalker_portal` — vod.class.php `getOrderedList` / `getFilesList`](https://github.com/iptvhakr/stalker_portal/blob/master/server/lib/vod.class.php)
+
+---
+
 ## Create Link
 
 Resolves the `cmd` value from a movie or episode into a playable stream URL.

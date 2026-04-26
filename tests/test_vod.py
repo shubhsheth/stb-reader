@@ -207,3 +207,61 @@ def test_get_stream_url_by_episode_id_raises_when_not_found():
     svc = VODService(_make_session())
     with pytest.raises(STBError, match="episode not found"):
         svc.get_stream_url_by_episode_id("999", "10")
+
+
+# --- get_episode_files ---
+
+@responses_lib.activate
+def test_get_episode_files_returns_list():
+    files = [
+        {"id": "1", "name": "English / HD (1080p)", "cmd": "/media/file_1.mpg"},
+        {"id": "2", "name": "English / SD (480p)", "cmd": "/media/file_2.mpg"},
+    ]
+    responses_lib.add(
+        responses_lib.GET, _portal_url(),
+        json={"js": {"data": files}},
+    )
+    svc = VODService(_make_session())
+    result = svc.get_episode_files("10", "1", "55")
+    assert len(result) == 2
+    assert result[0].id == "1"
+    assert result[0].name == "English / HD (1080p)"
+    assert result[0].cmd == "/media/file_1.mpg"
+    url = responses_lib.calls[0].request.url
+    assert "movie_id=10" in url
+    assert "season_id=1" in url
+    assert "episode_id=55" in url
+
+
+@responses_lib.activate
+def test_get_episode_files_returns_empty_list():
+    responses_lib.add(
+        responses_lib.GET, _portal_url(),
+        json={"js": {"data": []}},
+    )
+    svc = VODService(_make_session())
+    result = svc.get_episode_files("10", "1", "55")
+    assert result == []
+
+
+# --- get_stream_url_by_file_id ---
+
+@responses_lib.activate
+def test_get_stream_url_by_file_id_finds_file():
+    files = [{"id": "2", "name": "English / SD (480p)", "cmd": "/media/file_2.mpg"}]
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": files}})
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"cmd": "http://cdn/sd.m3u8", "error": ""}})
+    svc = VODService(_make_session())
+    url = svc.get_stream_url_by_file_id("10", "1", "55", "2")
+    assert url == "http://cdn/sd.m3u8"
+
+
+@responses_lib.activate
+def test_get_stream_url_by_file_id_raises_when_not_found():
+    responses_lib.add(
+        responses_lib.GET, _portal_url(),
+        json={"js": {"data": [{"id": "1", "name": "English / HD", "cmd": "/media/file_1.mpg"}]}},
+    )
+    svc = VODService(_make_session())
+    with pytest.raises(STBError, match="file not found"):
+        svc.get_stream_url_by_file_id("10", "1", "55", "999")

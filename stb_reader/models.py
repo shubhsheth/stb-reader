@@ -63,6 +63,13 @@ class Episode:
 
 
 @dataclass
+class EpisodeFile:
+    id: str
+    name: str
+    cmd: str
+
+
+@dataclass
 class PagedResult(Generic[T]):
     items: list
     total: int
