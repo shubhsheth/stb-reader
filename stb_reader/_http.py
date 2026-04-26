@@ -69,12 +69,15 @@ class STBSession:
         return resp
 
     def open_stream(self, cmd: str) -> requests.Response:
-        """Open an authenticated streaming request for a portal-relative ?token= URL."""
+        """Open a streaming request for a portal-relative ?token= URL.
+
+        Uses a fresh session (not self._session) so no stored session cookies
+        (e.g. token set by Set-Cookie from API calls) pollute the request and
+        cause PHP's $_REQUEST['token'] to resolve to the wrong value.
+        """
         full_url = f"{self.base_url}/{self.portal_path}{cmd}"
-        # Exclude the session token cookie so PHP's $_REQUEST['token'] resolves
-        # to the stream token in the URL, not the session token from the cookie.
-        cookies = {k: v for k, v in self._cookies.items() if k != "token"}
-        resp = self._session.get(full_url, headers=self._base_headers, cookies=cookies, stream=True)
+        cookies = {"mac": self.mac, "stb_lang": self.lang, "timezone": self.timezone}
+        resp = requests.get(full_url, headers=self._base_headers, cookies=cookies, stream=True)
         logger.debug("Stream response [%s]: %s", resp.status_code, resp.headers.get("content-type"))
         if not resp.ok:
             raise StreamError(f"stream fetch failed ({resp.status_code})")
