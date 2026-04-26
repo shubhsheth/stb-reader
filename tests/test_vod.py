@@ -178,6 +178,17 @@ def test_get_stream_url_by_episode_id_finds_episode():
 
 
 @responses_lib.activate
+def test_get_stream_url_by_episode_id_constructs_cmd_when_missing():
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "1", "name": "S1", "video_id": "200"}]}})
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "55", "name": "Ep1", "series_number": "1"}]}})
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"cmd": "http://cdn/stream.m3u8", "error": ""}})
+    svc = VODService(_make_session())
+    url = svc.get_stream_url_by_episode_id("55", "10")
+    assert url == "http://cdn/stream.m3u8"
+    assert "cmd=%2Fmedia%2F55.mpg" in responses_lib.calls[2].request.url
+
+
+@responses_lib.activate
 def test_get_stream_url_by_episode_id_raises_when_not_found():
     responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "1", "name": "S1", "video_id": "200"}]}})
     responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "1", "name": "Ep1", "series_number": "1", "cmd": "http://ep1"}]}})

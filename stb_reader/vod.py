@@ -125,5 +125,6 @@ class VODService:
             episodes = self.get_episodes(series_id, season.id)
             for ep in episodes:
                 if ep.id == str(episode_id):
-                    return self.get_stream_url(ep.cmd)
+                    cmd = ep.cmd or f"/media/{ep.id}.mpg"
+                    return self.get_stream_url(cmd)
         raise STBError("episode not found")
