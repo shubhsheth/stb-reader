@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import RedirectResponse
 from stb_reader.exceptions import STBError, StreamError
 
 router = APIRouter(prefix="/vod", tags=["vod"])
@@ -78,14 +78,11 @@ def get_content_stream(content_id: str, request: Request):
 @router.get("/episodes/{episode_id}/stream")
 def get_episode_stream(episode_id: str, request: Request, series_id: str):
     try:
-        resp = request.app.state.client.vod.open_episode_stream(episode_id, series_id)
+        url = request.app.state.client.vod.get_stream_url_by_episode_id(episode_id, series_id)
     except StreamError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except STBError as e:
         if "not found" in str(e):
             raise HTTPException(status_code=404, detail=str(e))
         raise HTTPException(status_code=502, detail=str(e))
-    return StreamingResponse(
-        resp.iter_content(chunk_size=8192),
-        media_type=resp.headers.get("content-type", "video/mp2t"),
-    )
+    return RedirectResponse(url=url, status_code=302)
