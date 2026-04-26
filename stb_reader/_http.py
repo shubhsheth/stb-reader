@@ -71,18 +71,20 @@ class STBSession:
     def open_stream(self, cmd: str) -> requests.Response:
         """Open a streaming request for a portal-relative ?token= URL.
 
-        Sends both the session token (Cookie: token=) for portal session
-        validation and the stream token in the URL (?token=) for media
-        lookup — load.php reads them from $_COOKIE and $_GET respectively.
+        Uses only base MAG device headers (no Authorization/X-Random) so
+        load.php sees a genuine STB stream request rather than an API call.
+        Session token travels in Cookie: token= for session validation;
+        play token travels in the URL (?token=) for media lookup.
         """
         full_url = f"{self.base_url}/{self.portal_path}{cmd}"
         self._cookies["token"] = self.token
-        headers = {**self._base_headers, "Authorization": f"Bearer {self.token}", **self.extra_headers}
-        resp = self._session.get(full_url, headers=headers, cookies=self._cookies, stream=True)
+        resp = self._session.get(full_url, headers=self._base_headers, cookies=self._cookies, stream=True)
         ct = resp.headers.get("content-type", "")
         logger.debug("Stream response [%s]: %s", resp.status_code, ct)
         if not resp.ok:
             raise StreamError(f"stream fetch failed ({resp.status_code})")
         if "json" in ct:
-            raise StreamError(f"portal rejected stream: {resp.json()}")
+            body = resp.json()
+            logger.error("load.php stream JSON: %s", body)
+            raise StreamError(f"portal rejected stream: {body}")
         return resp
