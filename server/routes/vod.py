@@ -1,6 +1,5 @@
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import RedirectResponse
-from stb_reader.exceptions import STBError, StreamError
+from fastapi import APIRouter, Request
+from ._helpers import paged_response, stream_redirect
 
 router = APIRouter(prefix="/vod", tags=["vod"])
 
@@ -21,12 +20,7 @@ def get_content(
     result = request.app.state.client.vod.get_content(
         category_id=category_id, page=page, sort=sort, fav=fav
     )
-    return {
-        "data": [vars(c) for c in result.items],
-        "page": result.page,
-        "total": result.total,
-        "per_page": result.per_page,
-    }
+    return paged_response(result)
 
 
 @router.get("/content/{content_id}/seasons")
@@ -41,48 +35,26 @@ def get_episodes(content_id: str, season_id: str, request: Request):
 
 @router.get("/content/{series_id}/seasons/{season_id}/episodes/{episode_id}/files")
 def get_episode_files(series_id: str, season_id: str, episode_id: str, request: Request):
-    files = request.app.state.client.vod.get_episode_files(series_id, season_id, episode_id)
-    return [vars(f) for f in files]
+    return request.app.state.client.vod.get_episode_files(series_id, season_id, episode_id)
 
 
 @router.get("/content/{series_id}/seasons/{season_id}/episodes/{episode_id}/files/{file_id}/stream")
 def get_episode_file_stream(
     series_id: str, season_id: str, episode_id: str, file_id: str, request: Request
 ):
-    try:
-        url = request.app.state.client.vod.get_stream_url_by_file_id(
-            series_id, season_id, episode_id, file_id
-        )
-    except StreamError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    except STBError as e:
-        if "not found" in str(e):
-            raise HTTPException(status_code=404, detail=str(e))
-        raise HTTPException(status_code=502, detail=str(e))
-    return RedirectResponse(url=url, status_code=302)
+    return stream_redirect(
+        request.app.state.client.vod.get_stream_url_by_file_id,
+        series_id, season_id, episode_id, file_id,
+    )
 
 
 @router.get("/content/{content_id}/stream")
 def get_content_stream(content_id: str, request: Request):
-    try:
-        url = request.app.state.client.vod.get_stream_url_by_content_id(content_id)
-    except StreamError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    except STBError as e:
-        if "not found" in str(e):
-            raise HTTPException(status_code=404, detail=str(e))
-        raise HTTPException(status_code=502, detail=str(e))
-    return RedirectResponse(url=url, status_code=302)
+    return stream_redirect(request.app.state.client.vod.get_stream_url_by_content_id, content_id)
 
 
 @router.get("/episodes/{episode_id}/stream")
 def get_episode_stream(episode_id: str, request: Request, series_id: str):
-    try:
-        url = request.app.state.client.vod.get_stream_url_by_episode_id(episode_id, series_id)
-    except StreamError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    except STBError as e:
-        if "not found" in str(e):
-            raise HTTPException(status_code=404, detail=str(e))
-        raise HTTPException(status_code=502, detail=str(e))
-    return RedirectResponse(url=url, status_code=302)
+    return stream_redirect(
+        request.app.state.client.vod.get_stream_url_by_episode_id, episode_id, series_id
+    )

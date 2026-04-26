@@ -8,3 +8,7 @@ class AuthError(STBError):
 
 class StreamError(STBError):
     pass
+
+
+class NotFoundError(STBError):
+    pass

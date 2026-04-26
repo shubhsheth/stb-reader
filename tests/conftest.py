@@ -8,6 +8,7 @@ SERIAL = "000000000000"
 LANG = "en"
 TIMEZONE = "Europe/London"
 PORTAL_PATH = "/stalker_portal/c/portal.php"
+PORTAL_URL = f"{BASE_URL}{PORTAL_PATH}"
 
 
 @pytest.fixture

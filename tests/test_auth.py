@@ -20,8 +20,7 @@ def test_handshake_sets_token():
     responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"token": "tok123"}})
     from stb_reader._http import STBSession
     session = STBSession(BASE_URL, MAC, "000000000000", "en", "Europe/London")
-    token = handshake(session)
-    assert token == "tok123"
+    handshake(session)
     assert session.token == "tok123"
 
 

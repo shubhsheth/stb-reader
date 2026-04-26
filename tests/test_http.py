@@ -2,22 +2,18 @@ import pytest
 import responses as responses_lib
 from stb_reader._http import STBSession
 from stb_reader.exceptions import AuthError, STBError
-from tests.conftest import BASE_URL, MAC, LANG, TIMEZONE, PORTAL_PATH
-
-
-def _portal_url():
-    return f"{BASE_URL}{PORTAL_PATH}"
+from tests.conftest import BASE_URL, MAC, LANG, TIMEZONE, PORTAL_URL
 
 
 def test_correct_url(mocked, session):
-    mocked.add(responses_lib.GET, _portal_url(), json={"js": {"result": "ok"}})
+    mocked.add(responses_lib.GET, PORTAL_URL, json={"js": {"result": "ok"}})
     result = session.get("stb", "handshake")
     assert result == {"result": "ok"}
-    assert mocked.calls[0].request.url.startswith(_portal_url())
+    assert mocked.calls[0].request.url.startswith(PORTAL_URL)
 
 
 def test_required_query_params(mocked, session):
-    mocked.add(responses_lib.GET, _portal_url(), json={"js": {}})
+    mocked.add(responses_lib.GET, PORTAL_URL, json={"js": {}})
     session.get("stb", "handshake", extra="val")
     url = mocked.calls[0].request.url
     assert "JsHttpRequest=1-xml" in url
@@ -28,14 +24,14 @@ def test_required_query_params(mocked, session):
 
 def test_authorization_header(mocked, session):
     session.token = "mytoken"
-    mocked.add(responses_lib.GET, _portal_url(), json={"js": {}})
+    mocked.add(responses_lib.GET, PORTAL_URL, json={"js": {}})
     session.get("stb", "handshake")
     headers = mocked.calls[0].request.headers
     assert headers["Authorization"] == "Bearer mytoken"
 
 
 def test_user_agent_headers(mocked, session):
-    mocked.add(responses_lib.GET, _portal_url(), json={"js": {}})
+    mocked.add(responses_lib.GET, PORTAL_URL, json={"js": {}})
     session.get("stb", "handshake")
     headers = mocked.calls[0].request.headers
     assert "User-Agent" in headers
@@ -44,7 +40,7 @@ def test_user_agent_headers(mocked, session):
 
 def test_cookie_header(mocked, session):
     session.token = "mytoken"
-    mocked.add(responses_lib.GET, _portal_url(), json={"js": {}})
+    mocked.add(responses_lib.GET, PORTAL_URL, json={"js": {}})
     session.get("stb", "handshake")
     cookie = mocked.calls[0].request.headers["Cookie"]
     assert f"mac={MAC}" in cookie
@@ -54,25 +50,25 @@ def test_cookie_header(mocked, session):
 
 
 def test_js_unwrapping(mocked, session):
-    mocked.add(responses_lib.GET, _portal_url(), json={"js": {"token": "abc123"}})
+    mocked.add(responses_lib.GET, PORTAL_URL, json={"js": {"token": "abc123"}})
     result = session.get("stb", "handshake")
     assert result == {"token": "abc123"}
 
 
 def test_stberror_on_4xx(mocked, session):
-    mocked.add(responses_lib.GET, _portal_url(), status=401, body="Unauthorized")
+    mocked.add(responses_lib.GET, PORTAL_URL, status=401, body="Unauthorized")
     with pytest.raises(STBError):
         session.get("stb", "handshake")
 
 
 def test_stberror_on_5xx(mocked, session):
-    mocked.add(responses_lib.GET, _portal_url(), status=500, body="Server Error")
+    mocked.add(responses_lib.GET, PORTAL_URL, status=500, body="Server Error")
     with pytest.raises(STBError):
         session.get("stb", "handshake")
 
 
 def test_autherror_on_auth_failure_body(mocked, session):
-    mocked.add(responses_lib.GET, _portal_url(), body="Authorization failed. 75")
+    mocked.add(responses_lib.GET, PORTAL_URL, body="Authorization failed. 75")
     with pytest.raises(AuthError):
         session.get("stb", "handshake")
 
@@ -84,8 +80,8 @@ def test_reauth_retry_on_auth_failure(mocked, session):
         reauth_calls.append(1)
 
     session.reauth_fn = fake_reauth
-    mocked.add(responses_lib.GET, _portal_url(), body="Authorization failed. 75")
-    mocked.add(responses_lib.GET, _portal_url(), json={"js": {"ok": True}})
+    mocked.add(responses_lib.GET, PORTAL_URL, body="Authorization failed. 75")
+    mocked.add(responses_lib.GET, PORTAL_URL, json={"js": {"ok": True}})
     result = session.get("stb", "handshake")
     assert result == {"ok": True}
     assert len(reauth_calls) == 1
@@ -93,7 +89,7 @@ def test_reauth_retry_on_auth_failure(mocked, session):
 
 def test_reauth_not_called_twice_on_persistent_failure(mocked, session):
     session.reauth_fn = lambda: None
-    mocked.add(responses_lib.GET, _portal_url(), body="Authorization failed. 75")
-    mocked.add(responses_lib.GET, _portal_url(), body="Authorization failed. 75")
+    mocked.add(responses_lib.GET, PORTAL_URL, body="Authorization failed. 75")
+    mocked.add(responses_lib.GET, PORTAL_URL, body="Authorization failed. 75")
     with pytest.raises(AuthError):
         session.get("stb", "handshake")

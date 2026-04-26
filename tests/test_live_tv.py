@@ -2,12 +2,8 @@ import pytest
 import responses as responses_lib
 from stb_reader._http import STBSession
 from stb_reader.live_tv import ITVService, _clean_url
-from stb_reader.exceptions import STBError, StreamError
-from tests.conftest import BASE_URL, MAC, PORTAL_PATH
-
-
-def _portal_url():
-    return f"{BASE_URL}{PORTAL_PATH}"
+from stb_reader.exceptions import NotFoundError, STBError, StreamError
+from tests.conftest import BASE_URL, MAC, PORTAL_URL
 
 
 def _make_session():
@@ -33,7 +29,7 @@ def test_clean_url_no_prefix():
 @responses_lib.activate
 def test_get_genres_returns_list():
     responses_lib.add(
-        responses_lib.GET, _portal_url(),
+        responses_lib.GET, PORTAL_URL,
         json={"js": [{"id": "1", "title": "News", "alias": "news", "censored": False}]},
     )
     svc = ITVService(_make_session())
@@ -50,7 +46,7 @@ def test_get_genres_returns_list():
 @responses_lib.activate
 def test_get_channels_page_translated_to_zero_index():
     responses_lib.add(
-        responses_lib.GET, _portal_url(),
+        responses_lib.GET, PORTAL_URL,
         json={"js": {"data": [], "total_items": 0, "max_page_items": 14}},
     )
     svc = ITVService(_make_session())
@@ -63,7 +59,7 @@ def test_get_channels_page_translated_to_zero_index():
 def test_get_channels_parses_channels():
     ch = {"id": "10", "number": "5", "name": "CNN", "cmd": "ffmpeg http://x", "logo": "", "tv_genre_id": "1", "hd": True, "censored": False}
     responses_lib.add(
-        responses_lib.GET, _portal_url(),
+        responses_lib.GET, PORTAL_URL,
         json={"js": {"data": [ch], "total_items": 1, "max_page_items": 14}},
     )
     svc = ITVService(_make_session())
@@ -80,7 +76,7 @@ def test_get_channels_parses_channels():
 @responses_lib.activate
 def test_get_stream_url_strips_prefix():
     responses_lib.add(
-        responses_lib.GET, _portal_url(),
+        responses_lib.GET, PORTAL_URL,
         json={"js": {"cmd": "ffmpeg http://cdn.test/stream", "error": ""}},
     )
     svc = ITVService(_make_session())
@@ -91,7 +87,7 @@ def test_get_stream_url_strips_prefix():
 @responses_lib.activate
 def test_get_stream_url_raises_stream_error_on_error_field():
     responses_lib.add(
-        responses_lib.GET, _portal_url(),
+        responses_lib.GET, PORTAL_URL,
         json={"js": {"cmd": "", "error": "nothing_to_play"}},
     )
     svc = ITVService(_make_session())
@@ -107,11 +103,11 @@ def test_get_stream_url_by_id_finds_channel():
         {"id": "42", "number": "1", "name": "BBC", "cmd": "ffmpeg http://bbc", "logo": "", "tv_genre_id": "1", "hd": False, "censored": False}
     ]
     responses_lib.add(
-        responses_lib.GET, _portal_url(),
+        responses_lib.GET, PORTAL_URL,
         json={"js": {"data": channels, "total_items": 1, "max_page_items": 14}},
     )
     responses_lib.add(
-        responses_lib.GET, _portal_url(),
+        responses_lib.GET, PORTAL_URL,
         json={"js": {"cmd": "ffmpeg http://bbc", "error": ""}},
     )
     svc = ITVService(_make_session())
@@ -125,9 +121,9 @@ def test_get_stream_url_by_id_raises_when_not_found():
         {"id": "1", "number": "1", "name": "CH1", "cmd": "x", "logo": "", "tv_genre_id": "1", "hd": False, "censored": False}
     ]
     responses_lib.add(
-        responses_lib.GET, _portal_url(),
+        responses_lib.GET, PORTAL_URL,
         json={"js": {"data": channels, "total_items": 1, "max_page_items": 14}},
     )
     svc = ITVService(_make_session())
-    with pytest.raises(STBError, match="channel not found"):
+    with pytest.raises(NotFoundError, match="channel not found"):
         svc.get_stream_url_by_id("999")
