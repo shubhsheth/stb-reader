@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
+import requests
 from .models import Category, Content, Season, Episode, PagedResult
 from .exceptions import STBError, StreamError
 from .live_tv import _clean_url
@@ -103,10 +104,7 @@ class VODService:
         if raw.get("error"):
             raise StreamError(raw["error"])
         url = raw.get("cmd", raw.get("url", ""))
-        url = _clean_url(url)
-        if url.startswith("?"):
-            url = self._s.resolve_stream_url(url)
-        return url
+        return _clean_url(url)
 
     def get_stream_url_by_content_id(self, content_id: str) -> str:
         page = 1
@@ -127,4 +125,20 @@ class VODService:
                 if ep.id == str(episode_id):
                     cmd = ep.cmd or f"/media/{ep.id}.mpg"
                     return self.get_stream_url(cmd)
+        raise STBError("episode not found")
+
+    def open_episode_stream(self, episode_id: str, series_id: str) -> requests.Response:
+        seasons = self.get_seasons(series_id)
+        for season in seasons:
+            episodes = self.get_episodes(series_id, season.id)
+            for ep in episodes:
+                if ep.id == str(episode_id):
+                    cmd = ep.cmd or f"/media/{ep.id}.mpg"
+                    raw = self._s.get("vod", "create_link", cmd=cmd)
+                    if raw.get("error"):
+                        raise StreamError(raw["error"])
+                    url = _clean_url(raw.get("cmd", raw.get("url", "")))
+                    if url.startswith("?"):
+                        return self._s.open_stream(url)
+                    raise StreamError(f"unexpected non-token stream URL: {url}")
         raise STBError("episode not found")

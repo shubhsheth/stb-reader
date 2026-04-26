@@ -60,12 +60,12 @@ class STBSession:
         except Exception:
             raise STBError(f"Invalid JSON response (status {resp.status_code}): {resp.text[:200]}")
 
-    def resolve_stream_url(self, cmd: str) -> str:
-        """Resolve a portal-relative ?token= cmd to the actual stream URL via authenticated request."""
+    def open_stream(self, cmd: str) -> requests.Response:
+        """Open an authenticated streaming request for a portal-relative ?token= URL."""
         full_url = f"{self.base_url}/{self.portal_path}{cmd}"
         self._cookies["token"] = self.token
         headers = {**self._base_headers, "Authorization": f"Bearer {self.token}", **self.extra_headers}
-        resp = self._session.get(full_url, headers=headers, cookies=self._cookies)
+        resp = self._session.get(full_url, headers=headers, cookies=self._cookies, stream=True)
         if not resp.ok:
             raise StreamError(f"stream fetch failed ({resp.status_code})")
-        return resp.url
+        return resp

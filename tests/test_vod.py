@@ -110,26 +110,6 @@ def test_get_stream_url_returns_clean_url():
     assert url == "http://cdn/movie.mp4"
 
 
-@responses_lib.activate
-def test_get_stream_url_resolves_token_url():
-    responses_lib.add(
-        responses_lib.GET, _portal_url(),
-        json={"js": {"cmd": "?token=abc123", "error": ""}},
-    )
-    responses_lib.add(
-        responses_lib.GET, _portal_url(),
-        status=302,
-        headers={"Location": "http://cdn.example.com/stream.m3u8"},
-    )
-    responses_lib.add(
-        responses_lib.GET, "http://cdn.example.com/stream.m3u8",
-        status=200,
-        body="",
-    )
-    svc = VODService(_make_session())
-    url = svc.get_stream_url("/media/123.mpg")
-    assert url == "http://cdn.example.com/stream.m3u8"
-
 
 @responses_lib.activate
 def test_get_stream_url_raises_stream_error():
@@ -186,6 +166,19 @@ def test_get_stream_url_by_episode_id_constructs_cmd_when_missing():
     url = svc.get_stream_url_by_episode_id("55", "10")
     assert url == "http://cdn/stream.m3u8"
     assert "cmd=%2Fmedia%2F55.mpg" in responses_lib.calls[2].request.url
+
+
+@responses_lib.activate
+def test_open_episode_stream_proxies_token_url():
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "1", "name": "S1", "video_id": "200"}]}})
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "55", "name": "Ep1", "series_number": "1"}]}})
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"cmd": "?token=abc123", "error": ""}})
+    responses_lib.add(responses_lib.GET, _portal_url(), status=200, body=b"video-bytes", headers={"Content-Type": "video/mp2t"})
+    svc = VODService(_make_session())
+    resp = svc.open_episode_stream("55", "10")
+    assert resp.status_code == 200
+    assert "cmd=%2Fmedia%2F55.mpg" in responses_lib.calls[2].request.url
+    assert "token=abc123" in responses_lib.calls[3].request.url
 
 
 @responses_lib.activate
