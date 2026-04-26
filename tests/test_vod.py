@@ -125,21 +125,20 @@ def test_get_stream_url_raises_stream_error():
 # --- get_stream_url_by_content_id ---
 
 @responses_lib.activate
-def test_get_stream_url_by_content_id_finds_item():
-    item = {"id": "77", "name": "Movie", "cmd": "ffmpeg http://movie", "screenshot_uri": "", "genres_str": "", "year": "", "description": "", "rating_imdb": "", "time": "", "is_series": False, "fav": False}
-    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [item], "total_items": 1, "max_page_items": 14}})
+def test_get_stream_url_by_content_id_constructs_cmd():
     responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"cmd": "ffmpeg http://movie", "error": ""}})
     svc = VODService(_make_session())
     url = svc.get_stream_url_by_content_id("77")
     assert url == "http://movie"
+    assert "cmd=%2Fmedia%2F77.mpg" in responses_lib.calls[0].request.url
 
 
 @responses_lib.activate
-def test_get_stream_url_by_content_id_raises_when_not_found():
-    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [], "total_items": 0, "max_page_items": 14}})
+def test_get_stream_url_by_content_id_raises_on_stream_error():
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"cmd": "", "error": "not_allow"}})
     svc = VODService(_make_session())
-    with pytest.raises(STBError, match="content not found"):
-        svc.get_stream_url_by_content_id("999")
+    with pytest.raises(StreamError):
+        svc.get_stream_url_by_content_id("77")
 
 
 # --- get_stream_url_by_episode_id ---
