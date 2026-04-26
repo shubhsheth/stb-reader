@@ -103,7 +103,10 @@ class VODService:
         if raw.get("error"):
             raise StreamError(raw["error"])
         url = raw.get("cmd", raw.get("url", ""))
-        return _clean_url(url)
+        url = _clean_url(url)
+        if url.startswith("?"):
+            url = self._s.resolve_stream_url(url)
+        return url
 
     def get_stream_url_by_content_id(self, content_id: str) -> str:
         page = 1

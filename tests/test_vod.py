@@ -111,6 +111,27 @@ def test_get_stream_url_returns_clean_url():
 
 
 @responses_lib.activate
+def test_get_stream_url_resolves_token_url():
+    responses_lib.add(
+        responses_lib.GET, _portal_url(),
+        json={"js": {"cmd": "?token=abc123", "error": ""}},
+    )
+    responses_lib.add(
+        responses_lib.GET, _portal_url(),
+        status=302,
+        headers={"Location": "http://cdn.example.com/stream.m3u8"},
+    )
+    responses_lib.add(
+        responses_lib.GET, "http://cdn.example.com/stream.m3u8",
+        status=200,
+        body="",
+    )
+    svc = VODService(_make_session())
+    url = svc.get_stream_url("/media/123.mpg")
+    assert url == "http://cdn.example.com/stream.m3u8"
+
+
+@responses_lib.activate
 def test_get_stream_url_raises_stream_error():
     responses_lib.add(
         responses_lib.GET, _portal_url(),
