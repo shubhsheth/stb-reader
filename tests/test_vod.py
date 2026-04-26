@@ -169,16 +169,42 @@ def test_get_stream_url_by_episode_id_constructs_cmd_when_missing():
 
 
 @responses_lib.activate
-def test_open_episode_stream_proxies_token_url():
+def test_open_episode_stream_uses_series_param_for_create_link():
+    # get_info (parent VOD cmd)
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"cmd": "http://parent-cmd"}})
+    # get_seasons
     responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "1", "name": "S1", "video_id": "200"}]}})
+    # get_episodes
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "55", "name": "Ep1", "series_number": "3"}]}})
+    # create_link returns full CDN URL
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"cmd": "ffmpeg http://cdn/stream.m3u8", "error": ""}})
+    # open_url fetches the CDN stream
+    responses_lib.add(responses_lib.GET, "http://cdn/stream.m3u8", status=200, body=b"video-bytes", headers={"Content-Type": "application/x-mpegURL"})
+    svc = VODService(_make_session())
+    resp = svc.open_episode_stream("55", "10")
+    assert resp.status_code == 200
+    create_link_url = responses_lib.calls[3].request.url
+    assert "series=3" in create_link_url
+    assert "forced_storage=0" in create_link_url
+    assert "disable_ad=0" in create_link_url
+
+
+@responses_lib.activate
+def test_open_episode_stream_falls_back_to_open_stream_for_token_url():
+    # get_info (parent cmd empty)
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"cmd": ""}})
+    # get_seasons
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "1", "name": "S1", "video_id": "200"}]}})
+    # get_episodes
     responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"data": [{"id": "55", "name": "Ep1", "series_number": "1"}]}})
+    # create_link returns ?token= URL
     responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"cmd": "?token=abc123", "error": ""}})
+    # open_stream fetches the token URL
     responses_lib.add(responses_lib.GET, _portal_url(), status=200, body=b"video-bytes", headers={"Content-Type": "video/mp2t"})
     svc = VODService(_make_session())
     resp = svc.open_episode_stream("55", "10")
     assert resp.status_code == 200
-    assert "cmd=%2Fmedia%2F55.mpg" in responses_lib.calls[2].request.url
-    assert "token=abc123" in responses_lib.calls[3].request.url
+    assert "token=abc123" in responses_lib.calls[4].request.url
 
 
 @responses_lib.activate
