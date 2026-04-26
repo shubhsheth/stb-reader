@@ -127,26 +127,14 @@ class VODService:
                     return self.get_stream_url(cmd)
         raise STBError("episode not found")
 
-    def _get_series_cmd(self, series_id: str) -> str:
-        raw = self._s.get("vod", "get_info", movie_id=series_id)
-        if isinstance(raw, dict):
-            return raw.get("cmd", "")
-        return ""
-
     def open_episode_stream(self, episode_id: str, series_id: str) -> requests.Response:
-        parent_cmd = self._get_series_cmd(series_id)
         seasons = self.get_seasons(series_id)
         for season in seasons:
             episodes = self.get_episodes(series_id, season.id)
             for ep in episodes:
                 if ep.id == str(episode_id):
-                    raw = self._s.get(
-                        "vod", "create_link",
-                        cmd=parent_cmd,
-                        series=ep.series_number,
-                        forced_storage=0,
-                        disable_ad=0,
-                    )
+                    cmd = ep.cmd or f"/media/{ep.id}.mpg"
+                    raw = self._s.get("vod", "create_link", cmd=cmd)
                     if raw.get("error"):
                         raise StreamError(raw["error"])
                     url = _clean_url(raw.get("cmd", raw.get("url", "")))
