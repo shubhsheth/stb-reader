@@ -133,15 +133,7 @@ class VODService:
         return _clean_url(url)
 
     def get_stream_url_by_content_id(self, content_id: str) -> str:
-        page = 1
-        while True:
-            result = self.get_content(category_id="*", page=page)
-            for item in result.items:
-                if item.id == str(content_id):
-                    return self.get_stream_url(item.cmd)
-            if not result.items or page * result.per_page >= result.total:
-                raise STBError("content not found")
-            page += 1
+        return self.get_stream_url(f"/media/{content_id}.mpg")
 
     def get_stream_url_by_episode_id(self, episode_id: str, series_id: str) -> str:
         seasons = self.get_seasons(series_id)
