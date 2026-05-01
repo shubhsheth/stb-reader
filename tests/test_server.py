@@ -149,25 +149,6 @@ class TestVOD:
         resp = tc.get("/vod/content/1/stream", follow_redirects=False)
         assert resp.status_code == 502
 
-    def test_get_episode_stream_redirects(self, test_client):
-        tc, mock = test_client
-        mock.vod.get_stream_url_by_episode_id.return_value = "http://stream.test/ep"
-        resp = tc.get("/vod/episodes/55/stream?series_id=10", follow_redirects=False)
-        assert resp.status_code == 302
-        assert resp.headers["location"] == "http://stream.test/ep"
-
-    def test_get_episode_stream_404_when_not_found(self, test_client):
-        tc, mock = test_client
-        mock.vod.get_stream_url_by_episode_id.side_effect = NotFoundError("episode not found")
-        resp = tc.get("/vod/episodes/999/stream?series_id=10", follow_redirects=False)
-        assert resp.status_code == 404
-
-    def test_get_episode_stream_502_on_stream_error(self, test_client):
-        tc, mock = test_client
-        mock.vod.get_stream_url_by_episode_id.side_effect = StreamError("nothing_to_play")
-        resp = tc.get("/vod/episodes/1/stream?series_id=10", follow_redirects=False)
-        assert resp.status_code == 502
-
     def test_get_episode_files_returns_list(self, test_client):
         tc, mock = test_client
         mock.vod.get_episode_files.return_value = [
