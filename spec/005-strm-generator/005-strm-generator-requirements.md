@@ -18,10 +18,8 @@ episode thumbnails, and descriptions pulled from TMDB/TVDb, and episodes play vi
 
 ## User Stories
 
-- As a user, I want to add a movie to my library so that a `.strm` file appears at the right
-  path for Jellyfin to scrape metadata and play the movie.
-- As a user, I want to add a series to my library so that `.strm` files are generated for
-  every episode, organised into season folders, with `SxxExx` naming that Jellyfin understands.
+- As a user, I want to add content to my library by ID so that the system automatically
+  determines whether it is a movie or series and generates the right `.strm` files.
 - As a user, I want to sync a series so that new episodes added to the portal since my last
   sync get new `.strm` files automatically.
 - As a user, I want the library to sync on a schedule so that new episodes appear without
@@ -35,18 +33,18 @@ episode thumbnails, and descriptions pulled from TMDB/TVDb, and episodes play vi
 
 ## Functional Requirements
 
-- FR-1: `POST /library/movies/{content_id}` adds a movie to the library and immediately writes
-  one `.strm` file to disk. Returns HTTP 201 with the created library item. Returns HTTP 409 if
-  the movie is already in the library.
-- FR-2: `POST /library/series/{content_id}` adds a series to the library, walks the portal tree
-  (seasons → episodes → files), and writes one `.strm` file per episode (using the first file
-  returned for that episode). Returns HTTP 201 with the library item and a count of `.strm`
-  files created. Returns HTTP 409 if the series is already in the library.
+- FR-1: `POST /library/add/{content_id}` fetches the content record from the portal, inspects
+  `is_series`, and branches accordingly:
+  - If movie (`is_series=false`): writes one `.strm` file to disk.
+  - If series (`is_series=true`): walks the portal tree (seasons → episodes → files) and writes
+    one `.strm` file per episode.
+  Returns HTTP 201 with the created library item and a count of `.strm` files written.
+  Returns HTTP 409 if the content is already in the library.
 - FR-3: `GET /library` returns a JSON array of all library items, each including `content_id`,
   `name`, `year`, `is_series`, `added_at`, `last_synced_at`, and `strm_count`.
 - FR-4: `DELETE /library/{content_id}` removes the library item and all associated `.strm`
   files from disk and from the DB. Returns HTTP 204. Returns HTTP 404 if not in the library.
-- FR-5: `POST /library/{content_id}/sync` re-walks the portal tree for a series and creates
+- FR-5: `POST /library/sync/{content_id}` re-walks the portal tree for a series and creates
   `.strm` files for any episodes not already represented in the DB. Also detects name/year
   changes (see FR-18). Returns HTTP 200 with a count of new files created. Is a no-op
   (returns 0) for movies. Returns HTTP 404 if not in the library.
@@ -148,16 +146,16 @@ server/
     __init__.py      → exports db, sync helpers used by routes
     db.py            → SQLite schema, connection factory, CRUD functions
     sync.py          → portal-walking logic: walk_series(), write_strm()
-    routes.py        → FastAPI router for /library endpoints
   routes/
     live_tv.py       → (unchanged)
     vod.py           → (unchanged)
+    library.py       → FastAPI router for /library endpoints
   config.py          → add strm_output_dir, strm_server_base_url, strm_db_path, strm_sync_interval_hours
   main.py            → mount /library router, init DB on startup, start background sync task
 tests/
-  test_library_db.py     → unit tests for db.py CRUD
-  test_library_sync.py   → unit tests for sync.py with mocked portal calls
-  test_library_routes.py → integration tests for /library endpoints
+  test_library_db.py     → unit tests for server/library/db.py CRUD
+  test_library_sync.py   → unit tests for server/library/sync.py with mocked portal calls
+  test_library_routes.py → integration tests for server/routes/library.py endpoints
 spec/
   005-strm-generator/
     005-strm-generator-requirements.md   ← this file
@@ -185,9 +183,9 @@ def write_strm(path: Path, url: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(url + "\n")
 
-# routes.py — thin, delegates to db + sync
-@router.post("/library/movies/{content_id}", status_code=201)
-def add_movie(content_id: str, request: Request):
+# routes/library.py — thin, delegates to db + sync
+@router.post("/library/add/{content_id}", status_code=201)
+def add_content(content_id: str, request: Request):
     ...
 ```
 
@@ -247,18 +245,18 @@ Coverage expectations:
 
 ## Success Criteria
 
-- `POST /library/movies/{id}` returns HTTP 201 and the `.strm` file exists at the correct
-  Jellyfin-compatible path containing only the proxy URL.
-- `POST /library/series/{id}` returns HTTP 201 and `.strm` files exist for every episode
-  (one per episode, using the first file), named with correct `SxxExx` convention.
+- `POST /library/add/{id}` with a movie content ID returns HTTP 201 and the `.strm` file
+  exists at the correct Jellyfin-compatible path containing only the proxy URL.
+- `POST /library/add/{id}` with a series content ID returns HTTP 201 and `.strm` files exist
+  for every episode, named with correct `SxxExx` convention.
 - `GET /library` lists all added items with correct `strm_count`.
 - `DELETE /library/{id}` removes the DB record and deletes all `.strm` files from disk.
-- `POST /library/{id}/sync` creates `.strm` files for new episodes, does not duplicate
+- `POST /library/sync/{id}` creates `.strm` files for new episodes, does not duplicate
   existing ones, and renames files on disk when the portal name/year has changed.
 - `POST /library/sync` applies sync to all series in the library.
 - The background task runs the full sync automatically on the configured interval; setting
   `strm_sync_interval_hours=0` disables it.
-- Duplicate `POST /library/movies/{id}` or `POST /library/series/{id}` returns HTTP 409.
+- Duplicate `POST /library/add/{id}` returns HTTP 409.
 - `pytest tests/` passes with no regressions across the full test suite.
 - `.strm` filenames contain no characters from the set `/\:*?"<>|`.
 
