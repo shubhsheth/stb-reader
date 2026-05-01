@@ -142,10 +142,8 @@ Dev:   uvicorn server.main:app --reload
 
 ```
 server/
-  library/
-    __init__.py      → exports db, sync helpers used by routes
-    db.py            → SQLite schema, connection factory, CRUD functions
-    sync.py          → portal-walking logic: walk_series(), write_strm()
+  db.py              → SQLite schema, connection factory, CRUD functions
+  sync.py            → portal-walking logic: walk_series(), write_strm()
   routes/
     live_tv.py       → (unchanged)
     vod.py           → (unchanged)
@@ -153,8 +151,8 @@ server/
   config.py          → add strm_output_dir, strm_server_base_url, strm_db_path, strm_sync_interval_hours
   main.py            → mount /library router, init DB on startup, start background sync task
 tests/
-  test_library_db.py     → unit tests for server/library/db.py CRUD
-  test_library_sync.py   → unit tests for server/library/sync.py with mocked portal calls
+  test_library_db.py     → unit tests for server/db.py CRUD
+  test_library_sync.py   → unit tests for server/sync.py with mocked portal calls
   test_library_routes.py → integration tests for server/routes/library.py endpoints
 spec/
   005-strm-generator/
@@ -183,7 +181,7 @@ def write_strm(path: Path, url: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(url + "\n")
 
-# routes/library.py — thin, delegates to db + sync
+# server/routes/library.py — thin, delegates to server/db.py + server/sync.py
 @router.post("/library/add/{content_id}", status_code=201)
 def add_content(content_id: str, request: Request):
     ...
