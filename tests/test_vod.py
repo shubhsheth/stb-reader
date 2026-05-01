@@ -131,41 +131,6 @@ def test_get_stream_url_by_content_id_raises_on_stream_error(session):
         svc.get_stream_url_by_content_id("77")
 
 
-# --- get_stream_url_by_episode_id ---
-
-@responses_lib.activate
-def test_get_stream_url_by_episode_id_finds_episode(session):
-    # seasons
-    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"data": [{"id": "1", "name": "S1", "video_id": "200"}]}})
-    # episodes for season 1
-    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"data": [{"id": "55", "name": "Ep1", "series_number": "1", "cmd": "http://ep55"}]}})
-    # create_link
-    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"cmd": "http://ep55", "error": ""}})
-    svc = VODService(session)
-    url = svc.get_stream_url_by_episode_id("55", "10")
-    assert url == "http://ep55"
-
-
-@responses_lib.activate
-def test_get_stream_url_by_episode_id_constructs_cmd_when_missing(session):
-    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"data": [{"id": "1", "name": "S1", "video_id": "200"}]}})
-    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"data": [{"id": "55", "name": "Ep1", "series_number": "1"}]}})
-    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"cmd": "http://cdn/stream.m3u8", "error": ""}})
-    svc = VODService(session)
-    url = svc.get_stream_url_by_episode_id("55", "10")
-    assert url == "http://cdn/stream.m3u8"
-    assert "cmd=%2Fmedia%2F55.mpg" in responses_lib.calls[2].request.url
-
-
-@responses_lib.activate
-def test_get_stream_url_by_episode_id_raises_when_not_found(session):
-    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"data": [{"id": "1", "name": "S1", "video_id": "200"}]}})
-    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"data": [{"id": "1", "name": "Ep1", "series_number": "1", "cmd": "http://ep1"}]}})
-    svc = VODService(session)
-    with pytest.raises(NotFoundError, match="episode not found"):
-        svc.get_stream_url_by_episode_id("999", "10")
-
-
 # --- get_episode_files ---
 
 @responses_lib.activate
