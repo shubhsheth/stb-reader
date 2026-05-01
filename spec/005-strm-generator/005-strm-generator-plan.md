@@ -2,15 +2,14 @@
 
 ## Component Overview
 
-Three new files, two modified files, one updated docker-compose:
+Three new files, two modified files:
 
 ```
 server/db.py              ← new: SQLite schema + CRUD
-server/sync.py            ← new: portal walking, .strm writing, name-change rename
+server/sync.py            ← new: portal walking, .strm writing
 server/routes/library.py  ← new: /library endpoints
 server/config.py          ← modified: 4 new settings
 server/main.py            ← modified: mount router, init DB, start background task
-docker-compose.yml        ← modified: add Jellyfin service + shared volume
 .env.example              ← modified: document new env vars
 ```
 
@@ -40,7 +39,7 @@ Phase 4: Routes (server/routes/library.py)
     ↓
 Phase 5: main.py wiring + background task
     ↓
-Phase 6: Docker + .env.example
+Phase 6: .env.example
     ↓
 Phase 7: Docs
 ```
@@ -159,18 +158,14 @@ def write_strm(path: Path, url: str) -> None
 
 ### Core functions
 
-**`find_content_by_id(vod, content_id) -> Content`**
+**`add_content(db, vod, output_dir, server_base, content_id, name, year, is_series) -> int`** (FR-1)
 
-Pages through `vod.get_content(category_id="*", page=n)` until it finds the item with
-matching `id`. Short-circuits as soon as found. Raises `NotFoundError` if exhausted.
-Used at add time (FR-1) and sync time (FR-18) to get current name/year from portal.
+`name`, `year`, and `is_series` come from the request body — the client already has
+them from browsing `GET /vod/content`. No portal re-fetch needed.
 
-**`add_content(db, vod, output_dir, server_base, content_id) -> int`** (FR-1)
-
-1. Call `find_content_by_id` to get `name`, `year`, `is_series`
-2. `add_library_item(db, ...)` — raises `IntegrityError` if duplicate (caller maps to 409)
-3. If movie: build path (FR-9), write `.strm` (FR-7), `add_strm_file(db, ...)`; return 1
-4. If series: call `_write_series_strm_files`; return count
+1. `add_library_item(db, ...)` — raises `IntegrityError` if duplicate (caller maps to 409)
+2. If movie: build path (FR-9), write `.strm` (FR-7), `add_strm_file(db, ...)`; return 1
+3. If series: call `_write_series_strm_files`; return count
 
 **`_write_series_strm_files(db, vod, output_dir, server_base, content_id, name, year) -> int`**
 
@@ -193,31 +188,14 @@ for season in vod.get_seasons(content_id):
 return count
 ```
 
-**`sync_item(db, vod, output_dir, server_base, content_id) -> int`** (FR-5, FR-15, FR-18)
+**`sync_item(db, vod, output_dir, server_base, content_id) -> int`** (FR-5, FR-15)
 
 1. Fetch `item = get_library_item(db, content_id)` — caller raises 404 if None
 2. Return 0 immediately if `item["is_series"] == 0` (movie no-op)
-3. `current = find_content_by_id(vod, content_id)` to get current name/year
-4. If name or year changed (FR-18): call `_rename_strm_files(db, item, current)`
-5. Call `_write_series_strm_files(...)` with updated name/year; return new count
-6. `set_last_synced(db, content_id)`
+3. Call `_write_series_strm_files(...)` using stored `item["name"]` and `item["year"]`; return new count
+4. `set_last_synced(db, content_id)`
 
-**`_rename_strm_files(db, old_item, new_content)`** (FR-18)
-
-```
-for file_row in get_strm_files(db, content_id):
-    old_path = Path(file_row["strm_path"])
-    new_path = (rebuild path with new name/year)
-    update_strm_path(db, str(old_path), str(new_path))   # DB first
-    new_path.parent.mkdir(parents=True, exist_ok=True)
-    old_path.rename(new_path)
-# remove now-empty old directories
-update_library_item_name(db, content_id, new_content.name, new_content.year)
-```
-
-DB is updated before the filesystem move. If the process crashes mid-rename, the
-`strm_path` in the DB points to the new location; on next sync the missing old file
-is a no-op (the episode already has a row so it won't be re-added).
+Name/year changes on the portal are handled by delete + re-add, not automatic detection.
 
 **`sync_all(db, vod, output_dir, server_base) -> list[dict]`** (FR-6)
 
@@ -241,7 +219,7 @@ Use `tmp_path` fixture (pytest) for output_dir. Mock portal via `responses` libr
 - `add_content` series: 2 seasons × 2 episodes → 4 `.strm` files
 - Episode with zero files is skipped (FR-14)
 - `sync_item` skips already-existing episodes (FR-15)
-- `sync_item` detects name change, renames files and dirs (FR-18)
+- `sync_item` is a no-op for movies
 - `sync_all` aggregates counts across series
 
 ---
@@ -255,12 +233,20 @@ Routes are thin: validate inputs, call sync/db functions, map exceptions to HTTP
 ```python
 router = APIRouter(tags=["library"])
 
-@router.post("/library/add/{content_id}", status_code=201)
+class AddContentRequest(BaseModel):
+    name: str
+    year: str
+    is_series: bool
+
+@router.post("/library/add/{content_id}", status_code=201)  # body: AddContentRequest
 @router.get("/library")
 @router.delete("/library/{content_id}", status_code=204)
 @router.post("/library/sync/{content_id}")
 @router.post("/library/sync")
 ```
+
+`name`, `year`, and `is_series` arrive in the request body — the client already has
+them from browsing `GET /vod/content`. No extra portal call needed in the route.
 
 Exception mapping:
 - `sqlite3.IntegrityError` → HTTP 409
@@ -321,42 +307,30 @@ calls every time the server restarts.
 
 ---
 
-## Phase 6 — Docker + .env.example
+## Phase 6 — .env.example
 
-**Files:** `docker-compose.yml`, `.env.example`
+**Files:** `.env.example`
 
-`docker-compose.yml`:
+The existing `docker-compose.yml` is an example for running stb-reader only — no
+changes needed. Users manage their own Jellyfin deployment separately.
 
-```yaml
-services:
-  stb-reader:
-    build: .
-    ports:
-      - "8000:8000"
-    env_file: .env
-    volumes:
-      - strm_library:/library
-    restart: unless-stopped
+Add the four new env vars to `.env.example` with comments referencing the three
+`STRM_SERVER_BASE_URL` options from NFR-4:
 
-  jellyfin:
-    image: jellyfin/jellyfin
-    volumes:
-      - strm_library:/media/library:ro
-      - jellyfin_config:/config
-      - jellyfin_cache:/cache
-    ports:
-      - "8096:8096"
-    restart: unless-stopped
-
-volumes:
-  strm_library:
-  jellyfin_config:
-  jellyfin_cache:
 ```
-
-Both services share the `strm_library` volume. stb-reader writes; Jellyfin reads
-(`:ro`). Both are on the default Compose network, so `http://stb-reader:8000` resolves
-from the Jellyfin container.
+# Library / .strm generator
+STRM_OUTPUT_DIR=/library
+# Base URL reachable by Jellyfin at playback time. Options:
+#   Docker service name (transcoded playback, same Compose network):
+#     STRM_SERVER_BASE_URL=http://stb-reader:8000
+#   Host LAN IP (direct play on LAN, any Jellyfin location):
+#     STRM_SERVER_BASE_URL=http://192.168.1.x:8000
+#   Reverse proxy hostname (remote access, all playback modes):
+#     STRM_SERVER_BASE_URL=https://stb.yourdomain.com
+STRM_SERVER_BASE_URL=http://stb-reader:8000
+STRM_DB_PATH=./library.db
+STRM_SYNC_INTERVAL_HOURS=6
+```
 
 ---
 
@@ -374,8 +348,6 @@ from the Jellyfin container.
 
 | Risk | Mitigation |
 |---|---|
-| `find_content_by_id` is O(n pages) | Short-circuit on first match; one-time cost at add, infrequent at sync |
-| FR-18 rename crash leaves DB/disk inconsistent | DB updated first; on next sync the episode row already exists so it won't be re-added, but the old physical file may be orphaned — acceptable for this iteration |
 | Background task fires while manual sync is in flight | Both operate on the same SQLite connection; `episode_exists` check (FR-15) ensures no duplicates regardless of race |
 | Portal returns `series_number = "0"` or empty string | FR-13 fallback to 1-based position in episode list |
 | Season name not matching `\d+` pattern | FR-12 fallback to 1-based position in season list |

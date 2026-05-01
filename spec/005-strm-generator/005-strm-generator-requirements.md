@@ -33,8 +33,9 @@ episode thumbnails, and descriptions pulled from TMDB/TVDb, and episodes play vi
 
 ## Functional Requirements
 
-- FR-1: `POST /library/add/{content_id}` fetches the content record from the portal, inspects
-  `is_series`, and branches accordingly:
+- FR-1: `POST /library/add/{content_id}` accepts a JSON body with `name` (string),
+  `year` (string), and `is_series` (boolean) — values the client already has from
+  browsing `GET /vod/content`. Branches accordingly:
   - If movie (`is_series=false`): writes one `.strm` file to disk.
   - If series (`is_series=true`): walks the portal tree (seasons → episodes → files) and writes
     one `.strm` file per episode.
@@ -45,16 +46,11 @@ episode thumbnails, and descriptions pulled from TMDB/TVDb, and episodes play vi
 - FR-4: `DELETE /library/{content_id}` removes the library item and all associated `.strm`
   files from disk and from the DB. Returns HTTP 204. Returns HTTP 404 if not in the library.
 - FR-5: `POST /library/sync/{content_id}` re-walks the portal tree for a series and creates
-  `.strm` files for any episodes not already represented in the DB. Also detects name/year
-  changes (see FR-18). Returns HTTP 200 with a count of new files created. Is a no-op
-  (returns 0) for movies. Returns HTTP 404 if not in the library.
+  `.strm` files for any episodes not already represented in the DB. Returns HTTP 200 with a
+  count of new files created. Is a no-op (returns 0) for movies. Returns HTTP 404 if not in
+  the library.
 - FR-6: `POST /library/sync` runs FR-5 logic for every series in the library. Returns HTTP 200
   with a per-item summary of new files created.
-- FR-18: During sync, the portal content record is re-fetched. If `name` or `year` differs
-  from the value stored in `library_items`, all `.strm` files for that content are moved to
-  the new path on disk, all `strm_path` values in `strm_files` are updated, and
-  `library_items.name` / `library_items.year` are updated. Old (now-empty) directories are
-  removed.
 - FR-7: `.strm` file content for a movie is a single line:
   `{server_base_url}/vod/content/{content_id}/stream`
 - FR-8: `.strm` file content for an episode file is a single line:
@@ -125,8 +121,8 @@ episode thumbnails, and descriptions pulled from TMDB/TVDb, and episodes play vi
 - A-1: The portal returns exactly one file per episode; no quality selection is needed.
 - A-2: `content_id` uniquely identifies a piece of content on the portal for the lifetime of
   a session and across re-authentications.
-- A-3: Name changes on the portal are handled at sync time (FR-18). Files are moved on disk
-  to match the new name, consistent with how Radarr/Sonarr handle title changes from TMDB.
+- A-3: Name/year changes on the portal are handled by delete + re-add. Sync only adds new
+  episodes using the name/year stored at add-time; it does not re-fetch content metadata.
 - A-4: Output directories are created with `parents=True, exist_ok=True`; no pre-existing
   directory structure is required.
 - A-5: `strm_output_dir` and `strm_server_base_url` are validated at startup (non-empty);
@@ -237,7 +233,7 @@ Test locations: `tests/test_library_db.py`, `tests/test_library_sync.py`,
 Coverage expectations:
 - `db.py`: CRUD happy paths + duplicate insert raises `IntegrityError` (tested directly).
 - `sync.py`: movie `.strm` write, series walk (2 seasons × 2 episodes), zero-files episode
-  skipped, season number fallback to index, name-change triggers file rename on disk.
+  skipped, season number fallback to index, sync is no-op for movies.
 - Routes: 201 created, 409 already-exists, 404 not-found, 204 delete, sync returns correct counts.
 - Background scheduler: tested by asserting the asyncio task is created and cancelled cleanly
   (no actual sleep in tests — interval is set to 0 or task is cancelled immediately).
@@ -265,8 +261,8 @@ Coverage expectations:
   for every episode, named with correct `SxxExx` convention.
 - `GET /library` lists all added items with correct `strm_count`.
 - `DELETE /library/{id}` removes the DB record and deletes all `.strm` files from disk.
-- `POST /library/sync/{id}` creates `.strm` files for new episodes, does not duplicate
-  existing ones, and renames files on disk when the portal name/year has changed.
+- `POST /library/sync/{id}` creates `.strm` files for new episodes and does not duplicate
+  existing ones.
 - `POST /library/sync` applies sync to all series in the library.
 - The background task runs the full sync automatically on the configured interval; setting
   `strm_sync_interval_hours=0` disables it.
