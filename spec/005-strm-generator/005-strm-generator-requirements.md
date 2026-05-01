@@ -24,6 +24,8 @@ episode thumbnails, and descriptions pulled from TMDB/TVDb, and episodes play vi
   every episode, organised into season folders, with `SxxExx` naming that Jellyfin understands.
 - As a user, I want to sync a series so that new episodes added to the portal since my last
   sync get new `.strm` files automatically.
+- As a user, I want the library to sync on a schedule so that new episodes appear without
+  manual intervention.
 - As a user, I want to remove content from my library so that the `.strm` files and DB records
   are cleaned up.
 - As a user, I want to list my library so that I can see what has been added and when it was
@@ -45,11 +47,16 @@ episode thumbnails, and descriptions pulled from TMDB/TVDb, and episodes play vi
 - FR-4: `DELETE /library/{content_id}` removes the library item and all associated `.strm`
   files from disk and from the DB. Returns HTTP 204. Returns HTTP 404 if not in the library.
 - FR-5: `POST /library/{content_id}/sync` re-walks the portal tree for a series and creates
-  `.strm` files for any episodes not already represented in the DB. Returns HTTP 200 with a
-  count of new files created. Is a no-op (returns 0) for movies. Returns HTTP 404 if not in
-  the library.
+  `.strm` files for any episodes not already represented in the DB. Also detects name/year
+  changes (see FR-18). Returns HTTP 200 with a count of new files created. Is a no-op
+  (returns 0) for movies. Returns HTTP 404 if not in the library.
 - FR-6: `POST /library/sync` runs FR-5 logic for every series in the library. Returns HTTP 200
   with a per-item summary of new files created.
+- FR-18: During sync, the portal content record is re-fetched. If `name` or `year` differs
+  from the value stored in `library_items`, all `.strm` files for that content are moved to
+  the new path on disk, all `strm_path` values in `strm_files` are updated, and
+  `library_items.name` / `library_items.year` are updated. Old (now-empty) directories are
+  removed.
 - FR-7: `.strm` file content for a movie is a single line:
   `{server_base_url}/vod/content/{content_id}/stream`
 - FR-8: `.strm` file content for an episode file is a single line:
@@ -63,36 +70,39 @@ episode thumbnails, and descriptions pulled from TMDB/TVDb, and episodes play vi
   parsing fails, fall back to the season's 1-based position in the list returned by the portal.
 - FR-13: Episode number comes from the episode's `series_number` field (cast to int). If zero
   or absent, fall back to the episode's 1-based position in its season list.
-- FR-14: When an episode has multiple files, the **first file** in the portal's returned list
-  is used. No `.strm` file is created for the episode if the portal returns zero files.
+- FR-14: The portal returns exactly one file per episode. That file's `file_id` and `cmd` are
+  used directly. No `.strm` file is created for the episode if the portal returns zero files.
 - FR-15: The DB records which `file_id` was used per episode; re-running sync skips episodes
   that already have a `strm_files` row, even if the portal now returns different files.
 - FR-16: State is persisted in a SQLite database at the path configured by `strm_db_path`.
   Schema is created automatically on server startup if not present.
-- FR-17: Three new settings are added to `server/config.py` (all read from `.env`):
+- FR-17: Four new settings are added to `server/config.py` (all read from `.env`):
   - `strm_output_dir` — root directory for `.strm` files (required)
   - `strm_server_base_url` — base URL of this server as seen by Jellyfin (required)
   - `strm_db_path` — path to the SQLite DB file (default: `./library.db`)
+  - `strm_sync_interval_hours` — how often the background sync runs in hours (default: `6`;
+    set to `0` to disable automatic sync)
+- FR-19: On server startup, if `strm_sync_interval_hours > 0`, an `asyncio` background task
+  is started that runs the FR-6 sync logic on the configured interval. The task is cancelled
+  cleanly during server shutdown via the FastAPI lifespan context.
 
 ---
 
 ## Non-Functional Requirements
 
-- NFR-1: No new Python runtime dependencies beyond `sqlite3` (stdlib) and existing project
-  deps (`fastapi`, `requests`, `pydantic-settings`).
+- NFR-1: No new Python runtime dependencies — `sqlite3`, `pathlib`, and `asyncio` are all
+  stdlib; background scheduling uses `asyncio.create_task` (no third-party scheduler).
 - NFR-2: A full series sync (all pages of all seasons for all episodes) makes the minimum
   number of portal requests — one per page of results, no redundant calls.
-- NFR-3: The sync endpoints are synchronous (blocking). Async/background job scheduling is
-  out of scope for this iteration.
+- NFR-3: The background sync task does not block the FastAPI event loop; all portal I/O
+  inside the task runs in a thread pool via `asyncio.to_thread`.
 
 ---
 
 ## Out of Scope
 
 - Live TV `.strm` generation.
-- Automatic scheduled sync (cron-style). All syncs are triggered by explicit API calls.
-- Quality profile selection (always pick the first file the portal returns).
-- Generating `.strm` files for all quality variants of an episode.
+- Quality profile selection (the portal returns exactly one file per episode).
 - A web UI — this is API-only.
 - Jellyfin library scan notifications after file generation.
 - Metadata override files (`.nfo` sidecar files).
@@ -102,13 +112,11 @@ episode thumbnails, and descriptions pulled from TMDB/TVDb, and episodes play vi
 
 ## Assumptions
 
-- A-1: The portal's episode files list for a given episode returns the best/preferred quality
-  first. Picking `files[0]` is therefore a reasonable default.
+- A-1: The portal returns exactly one file per episode; no quality selection is needed.
 - A-2: `content_id` uniquely identifies a piece of content on the portal for the lifetime of
   a session and across re-authentications.
-- A-3: The series `name` and `year` fields from the initial `get_content` call are stable
-  enough to use as the Jellyfin folder name; they are stored in SQLite at add-time and not
-  re-fetched on sync (so renaming on the portal does not move files).
+- A-3: Name changes on the portal are handled at sync time (FR-18). Files are moved on disk
+  to match the new name, consistent with how Radarr/Sonarr handle title changes from TMDB.
 - A-4: Output directories are created with `parents=True, exist_ok=True`; no pre-existing
   directory structure is required.
 - A-5: `strm_output_dir` and `strm_server_base_url` are validated at startup (non-empty);
@@ -118,8 +126,8 @@ episode thumbnails, and descriptions pulled from TMDB/TVDb, and episodes play vi
 
 ## Tech Stack
 
-Python 3.11+, FastAPI, `sqlite3` (stdlib), `pathlib` (stdlib), `requests`,
-`pydantic-settings`, `pytest` + `responses` + `httpx`.
+Python 3.11+, FastAPI, `sqlite3` (stdlib), `pathlib` (stdlib), `asyncio` (stdlib),
+`requests`, `pydantic-settings`, `pytest` + `responses` + `httpx`.
 
 ---
 
@@ -144,8 +152,8 @@ server/
   routes/
     live_tv.py       → (unchanged)
     vod.py           → (unchanged)
-  config.py          → add strm_output_dir, strm_server_base_url, strm_db_path
-  main.py            → mount /library router, init DB on startup
+  config.py          → add strm_output_dir, strm_server_base_url, strm_db_path, strm_sync_interval_hours
+  main.py            → mount /library router, init DB on startup, start background sync task
 tests/
   test_library_db.py     → unit tests for db.py CRUD
   test_library_sync.py   → unit tests for sync.py with mocked portal calls
@@ -217,8 +225,10 @@ Test locations: `tests/test_library_db.py`, `tests/test_library_sync.py`,
 Coverage expectations:
 - `db.py`: CRUD happy paths + duplicate insert raises `IntegrityError` (tested directly).
 - `sync.py`: movie `.strm` write, series walk (2 seasons × 2 episodes), zero-files episode
-  skipped, season number fallback to index.
+  skipped, season number fallback to index, name-change triggers file rename on disk.
 - Routes: 201 created, 409 already-exists, 404 not-found, 204 delete, sync returns correct counts.
+- Background scheduler: tested by asserting the asyncio task is created and cancelled cleanly
+  (no actual sleep in tests — interval is set to 0 or task is cancelled immediately).
 - All portal HTTP calls in sync tests are mocked with `responses`; no real portal is contacted.
 
 ---
@@ -227,8 +237,8 @@ Coverage expectations:
 
 - **Always:** Run `pytest tests/` before committing; create parent directories before writing
   `.strm` files; sanitise filenames before building paths.
-- **Ask first:** Adding any new pip dependency; changing existing route URL shapes; altering
-  the SQLite schema after it has been defined (may require migration logic).
+- **Ask first:** Changing existing route URL shapes; altering the SQLite schema after it has
+  been defined (may require migration logic).
 - **Never:** Write raw portal stream URLs into `.strm` files (always use the proxy URL);
   delete `.strm` files that are not recorded in `strm_files` table; expose `cmd` values in
   any API response or URL path.
@@ -243,9 +253,11 @@ Coverage expectations:
   (one per episode, using the first file), named with correct `SxxExx` convention.
 - `GET /library` lists all added items with correct `strm_count`.
 - `DELETE /library/{id}` removes the DB record and deletes all `.strm` files from disk.
-- `POST /library/{id}/sync` creates `.strm` files for new episodes and does not duplicate
-  existing ones.
+- `POST /library/{id}/sync` creates `.strm` files for new episodes, does not duplicate
+  existing ones, and renames files on disk when the portal name/year has changed.
 - `POST /library/sync` applies sync to all series in the library.
+- The background task runs the full sync automatically on the configured interval; setting
+  `strm_sync_interval_hours=0` disables it.
 - Duplicate `POST /library/movies/{id}` or `POST /library/series/{id}` returns HTTP 409.
 - `pytest tests/` passes with no regressions across the full test suite.
 - `.strm` filenames contain no characters from the set `/\:*?"<>|`.
