@@ -149,6 +149,25 @@ class TestVOD:
         resp = tc.get("/vod/content/1/stream", follow_redirects=False)
         assert resp.status_code == 502
 
+    def test_get_episode_stream_redirects(self, test_client):
+        tc, mock = test_client
+        mock.vod.get_stream_url_by_first_file.return_value = "http://cdn/hd.m3u8"
+        resp = tc.get("/vod/content/10/seasons/1/episodes/55/stream", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "http://cdn/hd.m3u8"
+
+    def test_get_episode_stream_404_when_no_files(self, test_client):
+        tc, mock = test_client
+        mock.vod.get_stream_url_by_first_file.side_effect = NotFoundError("no files for episode")
+        resp = tc.get("/vod/content/10/seasons/1/episodes/55/stream", follow_redirects=False)
+        assert resp.status_code == 404
+
+    def test_get_episode_stream_502_on_stream_error(self, test_client):
+        tc, mock = test_client
+        mock.vod.get_stream_url_by_first_file.side_effect = StreamError("not_allow")
+        resp = tc.get("/vod/content/10/seasons/1/episodes/55/stream", follow_redirects=False)
+        assert resp.status_code == 502
+
     def test_get_episode_files_returns_list(self, test_client):
         tc, mock = test_client
         mock.vod.get_episode_files.return_value = [

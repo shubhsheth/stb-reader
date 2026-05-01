@@ -38,6 +38,14 @@ def get_episode_files(content_id: str, season_id: str, episode_id: str, request:
     return request.app.state.client.vod.get_episode_files(content_id, season_id, episode_id)
 
 
+@router.get("/content/{content_id}/seasons/{season_id}/episodes/{episode_id}/stream")
+def get_episode_stream(content_id: str, season_id: str, episode_id: str, request: Request):
+    return stream_redirect(
+        request.app.state.client.vod.get_stream_url_by_first_file,
+        content_id, season_id, episode_id,
+    )
+
+
 @router.get("/content/{content_id}/seasons/{season_id}/episodes/{episode_id}/files/{file_id}/stream")
 def get_episode_file_stream(
     content_id: str, season_id: str, episode_id: str, file_id: str, request: Request

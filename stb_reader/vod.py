@@ -132,6 +132,12 @@ class VODService:
         url = raw.get("cmd", raw.get("url", ""))
         return _clean_url(url)
 
+    def get_stream_url_by_first_file(self, series_id: str, season_id: str, episode_id: str) -> str:
+        files = self.get_episode_files(series_id, season_id, episode_id)
+        if not files:
+            raise NotFoundError("no files for episode")
+        return self.get_stream_url(files[0].cmd)
+
     def get_stream_url_by_content_id(self, content_id: str) -> str:
         return self.get_stream_url(f"/media/{content_id}.mpg")
 

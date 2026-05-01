@@ -45,6 +45,7 @@ GET /vod/categories                             List VOD categories
 GET /vod/content                                            Paginated VOD content
 GET /vod/content/{id}/seasons                               Series seasons
 GET /vod/content/{id}/seasons/{sid}/episodes                Season episodes
+GET /vod/content/{id}/seasons/{sid}/episodes/{eid}/stream   302 redirect to first file stream
 GET /vod/content/{id}/seasons/{sid}/episodes/{eid}/files    Episode files (multi-quality)
 GET /vod/content/{id}/seasons/{sid}/episodes/{eid}/files/{fid}/stream  302 redirect to file stream
 GET /vod/content/{id}/stream                                302 redirect to movie stream

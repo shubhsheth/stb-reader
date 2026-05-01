@@ -131,6 +131,40 @@ def test_get_stream_url_by_content_id_raises_on_stream_error(session):
         svc.get_stream_url_by_content_id("77")
 
 
+# --- get_stream_url_by_first_file ---
+
+@responses_lib.activate
+def test_get_stream_url_by_first_file_streams_first_file(session):
+    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"data": [
+        {"id": "1", "name": "HD", "cmd": "/media/file_1.mpg"},
+        {"id": "2", "name": "SD", "cmd": "/media/file_2.mpg"},
+    ]}})
+    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"cmd": "http://cdn/hd.m3u8", "error": ""}})
+    svc = VODService(session)
+    url = svc.get_stream_url_by_first_file("10", "1", "55")
+    assert url == "http://cdn/hd.m3u8"
+    assert "cmd=%2Fmedia%2Ffile_1.mpg" in responses_lib.calls[1].request.url
+
+
+@responses_lib.activate
+def test_get_stream_url_by_first_file_raises_when_no_files(session):
+    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"data": []}})
+    svc = VODService(session)
+    with pytest.raises(NotFoundError, match="no files for episode"):
+        svc.get_stream_url_by_first_file("10", "1", "55")
+
+
+@responses_lib.activate
+def test_get_stream_url_by_first_file_raises_on_stream_error(session):
+    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"data": [
+        {"id": "1", "name": "HD", "cmd": "/media/file_1.mpg"},
+    ]}})
+    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"cmd": "", "error": "not_allow"}})
+    svc = VODService(session)
+    with pytest.raises(StreamError):
+        svc.get_stream_url_by_first_file("10", "1", "55")
+
+
 # --- get_episode_files ---
 
 @responses_lib.activate
