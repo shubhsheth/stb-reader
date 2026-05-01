@@ -76,7 +76,8 @@ episode thumbnails, and descriptions pulled from TMDB/TVDb, and episodes play vi
   Schema is created automatically on server startup if not present.
 - FR-17: Four new settings are added to `server/config.py` (all read from `.env`):
   - `strm_output_dir` — root directory for `.strm` files (required)
-  - `strm_server_base_url` — base URL of this server as seen by Jellyfin (required)
+  - `strm_server_base_url` — base URL used in `.strm` file content; must be reachable by
+    whichever party fetches the stream (see NFR-4 for options). Required.
   - `strm_db_path` — path to the SQLite DB file (default: `./library.db`)
   - `strm_sync_interval_hours` — how often the background sync runs in hours (default: `6`;
     set to `0` to disable automatic sync)
@@ -94,6 +95,17 @@ episode thumbnails, and descriptions pulled from TMDB/TVDb, and episodes play vi
   number of portal requests — one per page of results, no redundant calls.
 - NFR-3: The background sync task does not block the FastAPI event loop; all portal I/O
   inside the task runs in a thread pool via `asyncio.to_thread`.
+- NFR-4: `strm_server_base_url` must be set to a URL reachable by whoever fetches the stream.
+  Jellyfin's playback behaviour determines who that is:
+  - **Transcoding / server-proxied playback:** only the Jellyfin server fetches the URL.
+    `http://stb-reader:8000` (Docker service name) works when both containers share a Docker
+    network. Recommended starting point.
+  - **Direct play:** the client device fetches the URL directly. The Docker service name is
+    not resolvable outside Docker; use the host LAN IP instead
+    (`http://192.168.1.x:8000`). Works on LAN only — breaks for remote clients.
+  - **Remote / production access:** put stb-reader behind a reverse proxy with a public
+    hostname (`https://stb.yourdomain.com`). Works for all playback modes and all clients
+    including remote. Required upgrade when remote access is needed.
 
 ---
 
@@ -119,6 +131,10 @@ episode thumbnails, and descriptions pulled from TMDB/TVDb, and episodes play vi
   directory structure is required.
 - A-5: `strm_output_dir` and `strm_server_base_url` are validated at startup (non-empty);
   the server refuses to start if either is missing.
+- A-6: The default deployment has Jellyfin and stb-reader in the same Docker Compose file on
+  the same network, with `STRM_SERVER_BASE_URL=http://stb-reader:8000`. Upgrading to a
+  reverse proxy hostname later requires only changing this one env var and re-running sync
+  to regenerate `.strm` files with the new URL.
 
 ---
 
