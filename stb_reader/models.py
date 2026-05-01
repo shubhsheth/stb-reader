@@ -71,7 +71,7 @@ class EpisodeFile:
 
 @dataclass
 class PagedResult(Generic[T]):
-    items: list
+    items: list[T]
     total: int
     page: int
     per_page: int

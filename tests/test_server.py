@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 from stb_reader.models import Genre, Channel, Category, Content, Season, Episode, EpisodeFile, PagedResult
-from stb_reader.exceptions import STBError, StreamError
+from stb_reader.exceptions import NotFoundError, STBError, StreamError
 
 
 ENV_VARS = {
@@ -82,7 +82,7 @@ class TestLiveTV:
 
     def test_get_channel_stream_404_when_not_found(self, test_client):
         tc, mock = test_client
-        mock.live_tv.get_stream_url_by_id.side_effect = STBError("channel not found")
+        mock.live_tv.get_stream_url_by_id.side_effect = NotFoundError("channel not found")
         resp = tc.get("/live-tv/channels/999/stream", follow_redirects=False)
         assert resp.status_code == 404
 
@@ -139,7 +139,7 @@ class TestVOD:
 
     def test_get_content_stream_404_when_not_found(self, test_client):
         tc, mock = test_client
-        mock.vod.get_stream_url_by_content_id.side_effect = STBError("content not found")
+        mock.vod.get_stream_url_by_content_id.side_effect = NotFoundError("content not found")
         resp = tc.get("/vod/content/999/stream", follow_redirects=False)
         assert resp.status_code == 404
 
@@ -158,7 +158,7 @@ class TestVOD:
 
     def test_get_episode_stream_404_when_not_found(self, test_client):
         tc, mock = test_client
-        mock.vod.get_stream_url_by_episode_id.side_effect = STBError("episode not found")
+        mock.vod.get_stream_url_by_episode_id.side_effect = NotFoundError("episode not found")
         resp = tc.get("/vod/episodes/999/stream?series_id=10", follow_redirects=False)
         assert resp.status_code == 404
 
@@ -197,7 +197,7 @@ class TestVOD:
 
     def test_get_episode_file_stream_404_when_not_found(self, test_client):
         tc, mock = test_client
-        mock.vod.get_stream_url_by_file_id.side_effect = STBError("file not found")
+        mock.vod.get_stream_url_by_file_id.side_effect = NotFoundError("file not found")
         resp = tc.get("/vod/content/10/seasons/1/episodes/55/files/999/stream", follow_redirects=False)
         assert resp.status_code == 404
 

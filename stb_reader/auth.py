@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from ._http import STBSession
 
 
-def handshake(session: "STBSession") -> str:
+def handshake(session: "STBSession") -> None:
     data = session.get("stb", "handshake")
     token = data.get("token", "")
     if not token:
@@ -22,7 +22,6 @@ def handshake(session: "STBSession") -> str:
     else:
         signature = hashlib.sha256(os.urandom(32)).hexdigest().upper()
     session.signature = signature
-    return token
 
 
 def get_profile(session: "STBSession") -> dict:

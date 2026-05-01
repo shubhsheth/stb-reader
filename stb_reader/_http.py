@@ -1,4 +1,5 @@
 import logging
+import threading
 from collections.abc import Callable
 from urllib.parse import urlparse
 import requests
@@ -10,6 +11,12 @@ _USER_AGENT = "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, l
 _X_USER_AGENT = "Model: MAG200; Link: WiFi"
 
 _AUTH_FAILURE_PHRASES = {"Authorization failed", "Access denied"}
+_REQUEST_TIMEOUT = 10
+
+
+def _as_list(data) -> list:
+    """Normalise portal responses that return either a list or {"data": [...]}."""
+    return data if isinstance(data, list) else data.get("data", [])
 
 
 def _is_auth_failure(text: str) -> bool:
@@ -28,6 +35,7 @@ class STBSession:
         self.signature = ""
         self.extra_headers: dict = {}
         self.reauth_fn: Callable[[], None] | None = None
+        self._reauth_lock = threading.Lock()
         self._cookies = {"stb_lang": lang, "mac": mac, "timezone": timezone}
         parsed = urlparse(self.base_url)
         self._base_headers = {
@@ -40,29 +48,30 @@ class STBSession:
         }
         self._session = requests.Session()
 
-    def get(self, type: str, action: str, _retry: bool = False, **params) -> dict:
+    def get(self, type_: str, action: str, _retry: bool = False, **params) -> dict:
         url = f"{self.base_url}/{self.portal_path}"
-        query = {"JsHttpRequest": "1-xml", "type": type, "action": action, **params}
+        query = {"JsHttpRequest": "1-xml", "type": type_, "action": action, **params}
         self._cookies["token"] = self.token
         headers = {**self._base_headers, "Authorization": f"Bearer {self.token}", **self.extra_headers}
-        resp = self._session.get(url, params=query, headers=headers, cookies=self._cookies)
+        resp = self._session.get(url, params=query, headers=headers, cookies=self._cookies, timeout=_REQUEST_TIMEOUT)
         logger.debug("Response [%s %s]: %s", resp.status_code, action, resp.text[:500])
         if not resp.ok:
             raise STBError(f"HTTP {resp.status_code}: {resp.text[:200]}")
         if _is_auth_failure(resp.text):
             if self.reauth_fn and not _retry:
-                logger.debug("Auth failure on %s, re-authenticating", action)
-                self.reauth_fn()
-                return self.get(type, action, _retry=True, **params)
+                with self._reauth_lock:
+                    logger.debug("Auth failure on %s, re-authenticating", action)
+                    self.reauth_fn()
+                return self.get(type_, action, _retry=True, **params)
             raise AuthError(f"Portal rejected request ({action}): {resp.text[:100]}")
         try:
             return resp.json()["js"]
-        except Exception:
+        except (KeyError, ValueError):
             raise STBError(f"Invalid JSON response (status {resp.status_code}): {resp.text[:200]}")
 
     def open_url(self, url: str) -> requests.Response:
         """Fetch a full URL for streaming (no portal auth needed, e.g. CDN URLs)."""
-        resp = self._session.get(url, stream=True)
+        resp = self._session.get(url, stream=True, timeout=_REQUEST_TIMEOUT)
         logger.debug("Stream response [%s]: %s", resp.status_code, resp.headers.get("content-type"))
         if not resp.ok:
             raise StreamError(f"stream fetch failed ({resp.status_code})")
@@ -78,7 +87,7 @@ class STBSession:
         """
         full_url = f"{self.base_url}/{self.portal_path}{cmd}"
         self._cookies["token"] = self.token
-        resp = self._session.get(full_url, headers=self._base_headers, cookies=self._cookies, stream=True)
+        resp = self._session.get(full_url, headers=self._base_headers, cookies=self._cookies, stream=True, timeout=_REQUEST_TIMEOUT)
         ct = resp.headers.get("content-type", "")
         logger.debug("Stream response [%s]: %s", resp.status_code, ct)
         if not resp.ok:

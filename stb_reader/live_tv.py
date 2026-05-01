@@ -1,7 +1,8 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 from .models import Genre, Channel, PagedResult
-from .exceptions import STBError, StreamError
+from .exceptions import NotFoundError, STBError, StreamError
+from ._http import _as_list
 
 if TYPE_CHECKING:
     from ._http import STBSession
@@ -27,7 +28,7 @@ class ITVService:
                 alias=g.get("alias", ""),
                 censored=bool(g.get("censored", False)),
             )
-            for g in (data if isinstance(data, list) else data.get("data", []))
+            for g in _as_list(data)
         ]
 
     def get_channels(
@@ -68,7 +69,7 @@ class ITVService:
         )
 
     def get_stream_url(self, cmd: str) -> str:
-        raw = self._s.get("itv", "create_link", cmd=cmd, JsHttpRequest="1-xml")
+        raw = self._s.get("itv", "create_link", cmd=cmd)
         if raw.get("error"):
             raise StreamError(raw["error"])
         url = raw.get("cmd", "")
@@ -82,5 +83,5 @@ class ITVService:
                 if ch.id == str(channel_id):
                     return self.get_stream_url(ch.cmd)
             if not result.items or page * result.per_page >= result.total:
-                raise STBError("channel not found")
+                raise NotFoundError("channel not found")
             page += 1

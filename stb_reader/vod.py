@@ -1,8 +1,8 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
-import requests
 from .models import Category, Content, Season, Episode, EpisodeFile, PagedResult
-from .exceptions import STBError, StreamError
+from .exceptions import NotFoundError, STBError, StreamError
+from ._http import _as_list
 from .live_tv import _clean_url
 
 if TYPE_CHECKING:
@@ -22,7 +22,7 @@ class VODService:
                 alias=c.get("alias", ""),
                 censored=bool(c.get("censored", False)),
             )
-            for c in (data if isinstance(data, list) else data.get("data", []))
+            for c in _as_list(data)
         ]
 
     def get_content(
@@ -123,7 +123,7 @@ class VODService:
         for f in files:
             if f.id == str(file_id):
                 return self.get_stream_url(f.cmd)
-        raise STBError("file not found")
+        raise NotFoundError("file not found")
 
     def get_stream_url(self, cmd: str) -> str:
         raw = self._s.get("vod", "create_link", cmd=cmd)
@@ -143,20 +143,5 @@ class VODService:
                 if ep.id == str(episode_id):
                     cmd = ep.cmd or f"/media/{ep.id}.mpg"
                     return self.get_stream_url(cmd)
-        raise STBError("episode not found")
+        raise NotFoundError("episode not found")
 
-    def open_episode_stream(self, episode_id: str, series_id: str) -> requests.Response:
-        seasons = self.get_seasons(series_id)
-        for season in seasons:
-            episodes = self.get_episodes(series_id, season.id)
-            for ep in episodes:
-                if ep.id == str(episode_id):
-                    cmd = ep.cmd or f"/media/{ep.id}.mpg"
-                    raw = self._s.get("vod", "create_link", cmd=cmd)
-                    if raw.get("error"):
-                        raise StreamError(raw["error"])
-                    url = _clean_url(raw.get("cmd", raw.get("url", "")))
-                    if url.startswith("?"):
-                        return self._s.open_stream(url)
-                    return self._s.open_url(url)
-        raise STBError("episode not found")
