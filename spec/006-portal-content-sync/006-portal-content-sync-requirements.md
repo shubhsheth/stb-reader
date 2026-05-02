@@ -28,26 +28,28 @@ Currently `POST /library/add/{content_id}` requires the caller to supply `name`,
 ### Sync Endpoints
 
 - **FR-7** `POST /vod/sync` triggers a full portal sync (background task). Returns `202 Accepted` immediately. Returns `409 Conflict` if a sync is already running.
-- **FR-8** `GET /vod/sync/status` returns current sync state from `portal_sync_state`.
+- **FR-8** `GET /vod/sync/status` returns current sync state from `vod_sync_state`.
 
 ### Search Endpoint
 
-- **FR-9** `GET /vod/search?query=<string>` returns paginated `portal_content` rows matching the query in name or description via FTS5. Supports optional `page` (default 1), `page_size` (default 50, max 200), `is_series` filter (0 or 1). Returns `503` if `portal_content` is empty (never synced).
+- **FR-9** `GET /vod/search?query=<string>` returns paginated `vod_content` rows matching the query in name or description via FTS5. Supports optional `page` (default 1), `page_size` (default 50, max 200), `is_series` filter (0 or 1). Returns `503` if `vod_content` is empty (never synced).
 
 ### Library Endpoints (modified)
 
 - **FR-10** `POST /library/add/{content_id}` accepts no request body. Sets `in_library=1` and `added_at=now()` on the matching `vod_content` row. Returns `404` if `content_id` is not in `vod_content`. Returns `409` if already in library.
 - **FR-11** `GET /library` returns all `vod_content` rows where `in_library=1`, each including `strm_count` (subquery count from `strm_files`).
-- **FR-12** `DELETE /library/{content_id}` sets `in_library=0`, clears `added_at` and `last_synced_at`, and deletes all `strm_files` rows for that content. Returns `404` if not in library.
+- **FR-12** `DELETE /library/{content_id}` sets `in_library=0`, clears `added_at` and `last_synced_at`, deletes all `strm_files` rows, and deletes the corresponding `.strm` files from disk. Returns `404` if not in library.
 - **FR-13** `POST /library/sync/{content_id}` and `POST /library/sync` continue to work as before; `set_last_synced` updates `last_synced_at` on `vod_content`.
 
 ### Sync Strategy
 
 - **FR-14** The sync strategy fetches all categories first (one request), then fetches all content using `category_id="*"` pagination (N page requests). A second pass associates content to categories via per-category fetch. Sequential requests only — no concurrency.
-- **FR-15** A configurable delay of `portal_sync_request_delay_ms` (default 250 ms, min 0) is inserted between each portal HTTP request during sync.
-- **FR-16** A configurable `portal_sync_interval_hours` (default 24, 0 = disabled) controls the background re-sync schedule. On startup, if `portal_content` is empty a sync runs immediately regardless of interval.
-- **FR-17** Sync uses `INSERT OR REPLACE` so re-running is idempotent. `in_library`, `added_at`, and `last_synced_at` are preserved on upsert (not overwritten by sync). Rows not seen in the latest sync are NOT deleted from `vod_content`.
-- **FR-18** A configurable `portal_sync_max_pages` (default 0 = unlimited) caps the number of content pages fetched. When positive, sync stops after that many pages (for testing without a full sync).
+- **FR-15** A configurable delay of `vod_sync_request_delay_ms` (default 250 ms, min 0) is inserted between each portal HTTP request during sync.
+- **FR-16** A configurable `vod_sync_interval_hours` (default 24, 0 = disabled) controls the background re-sync schedule. On startup, if `vod_content` is empty a sync runs immediately regardless of interval.
+- **FR-17** Sync uses `INSERT OR REPLACE` so re-running is idempotent. `in_library`, `added_at`, and `last_synced_at` are preserved on upsert (not overwritten by sync).
+- **FR-18** A configurable `vod_sync_max_pages` (default 0 = unlimited) caps the number of content pages fetched. When positive, sync stops after that many pages (for testing without a full sync). Stale content cleanup (FR-20, FR-21) is skipped when `vod_sync_max_pages > 0` since the sync is intentionally partial.
+- **FR-20** After a full unlimited sync completes, any `vod_content` row whose `content_id` was not returned by the portal in that sync run is considered stale. Stale rows have their `.strm` files deleted from disk, their `strm_files` rows deleted, and the `vod_content` row deleted.
+- **FR-21** During upsert, if a row already exists in `vod_content` and the incoming `name` or `year` differs from the stored value with a similarity ratio below 75% (using `difflib.SequenceMatcher`), the content is considered to have changed significantly. In this case the old `.strm` files are deleted from disk, `strm_files` rows are deleted, and `in_library` is set to 0 with `added_at` and `last_synced_at` cleared. The `vod_content` row is then updated with the new portal data.
 - **FR-19** Sync emits structured log lines at key points: sync started, each category fetched, each content page fetched (page number + cumulative count), sync finished (total count + duration), and each skipped page error.
 
 ## Non-Functional Requirements
@@ -63,7 +65,6 @@ Currently `POST /library/add/{content_id}` requires the caller to supply `name`,
 
 - Live TV channel caching.
 - Series season/episode metadata caching (only top-level Content items are synced here).
-- Removing `portal_content` rows when content disappears from the portal.
 - Spec 002's separate `vod_cache.db` approach — this spec supersedes it. Spec 002 was never implemented.
 - Web UI or frontend for browsing.
 
@@ -93,11 +94,11 @@ Dev server:     uvicorn server.main:app --reload
 
 ```
 server/
-  db.py              (MODIFIED) - replace library_items with portal_content; add portal tables via CREATE IF NOT EXISTS
-  vod_sync.py        (NEW)      - portal walking + rate-limited fetch loop + structured logging
+  db.py              (MODIFIED) - replace library_items with vod_content; add all vod_* tables via CREATE IF NOT EXISTS
+  vod_sync.py        (NEW)      - portal walking, rate-limited fetch loop, stale/changed content cleanup, structured logging
   routes/vod.py      (MODIFIED) - add /vod/sync, /vod/sync/status, /vod/search
-  routes/library.py  (MODIFIED) - update all CRUD to use portal_content; remove body from add
-  config.py          (MODIFIED) - 3 new settings: portal_sync_interval_hours, portal_sync_request_delay_ms, portal_sync_max_pages
+  routes/library.py  (MODIFIED) - update all CRUD to use vod_content; remove body from add; delete .strm files on remove
+  config.py          (MODIFIED) - 3 new settings: vod_sync_interval_hours, vod_sync_request_delay_ms, vod_sync_max_pages
   main.py            (MODIFIED) - init new DB schema, mount updated routers, startup sync task
 
 tests/
@@ -181,9 +182,9 @@ def run_sync(db, lock, vod, delay_ms, max_pages):
 ## Testing Strategy
 
 - Framework: pytest + responses (HTTP mocking), httpx (FastAPI TestClient)
-- `test_vod_sync.py`: mock `VODService`, assert page iteration, `time.sleep` mock for delay, `max_pages` cap, upsert idempotency, `in_library` preserved across re-sync
+- `test_vod_sync.py`: mock `VODService`, assert page iteration, `time.sleep` mock for delay, `max_pages` cap, upsert idempotency, `in_library` preserved across re-sync, stale row deletion (disk + DB), significant name/year change triggers strm cleanup and in_library reset, cleanup skipped on capped sync
 - `test_vod.py`: 202/409 for sync trigger, 503 on empty cache search, paginated results, `is_series` filter
-- `test_library_routes.py`: no body add returns 201, unknown id returns 404, delete clears `in_library` and removes strm_files
+- `test_library_routes.py`: no body add returns 201, unknown id returns 404, delete clears `in_library` and removes strm_files rows and `.strm` files from disk
 - Coverage: new modules ≥ 90%
 
 ## Boundaries
@@ -195,12 +196,15 @@ def run_sync(db, lock, vod, delay_ms, max_pages):
 ## Success Criteria
 
 - SC-1: After `POST /vod/sync` completes, `GET /vod/sync/status` returns `status: success` and `content_count > 0`.
-- SC-2: `GET /vod/search?query=action` returns paginated results from `portal_content`.
+- SC-2: `GET /vod/search?query=action` returns paginated results from `vod_content`.
 - SC-3: `POST /library/add/{content_id}` with no body and a known content_id returns 201; `vod_content.in_library` is set to 1.
 - SC-4: `POST /library/add/{content_id}` for an unknown content_id returns 404.
 - SC-5: Two concurrent `POST /vod/sync` calls: first 202, second 409.
 - SC-6: A portal page fetch error during sync is skipped; sync finishes with status `success`.
-- SC-7: `portal_sync_max_pages=2` causes sync to stop after 2 content pages.
-- SC-8: Re-running sync does not clear `in_library=1` on items already added to library.
-- SC-9: No real network calls in any test.
-- SC-10: `GET /library` only returns rows where `in_library=1`.
+- SC-7: `vod_sync_max_pages=2` causes sync to stop after 2 content pages; stale cleanup does not run.
+- SC-8: Re-running a full sync does not clear `in_library=1` on items already in library.
+- SC-9: After a full sync, a `vod_content` row absent from the portal response has its `.strm` files deleted from disk and its DB row removed.
+- SC-10: When a re-sync returns the same `content_id` with a name that is < 75% similar to the stored name, `.strm` files are deleted and `in_library` is reset to 0.
+- SC-11: `DELETE /library/{content_id}` removes `.strm` files from disk and the `strm_files` rows.
+- SC-12: No real network calls in any test.
+- SC-13: `GET /library` only returns rows where `in_library=1`.
