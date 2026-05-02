@@ -27,10 +27,12 @@ stb_reader/   Core pip-installable library; no FastAPI dependency
 server/       FastAPI + Uvicorn HTTP layer
   main.py     App factory and lifespan
   config.py   Environment variable settings
-  routes/     live_tv.py, vod.py
+  db.py       SQLite schema and CRUD for the library
+  sync.py     Portal-walking logic: add_content(), sync_item(), delete_content()
+  routes/     live_tv.py, vod.py, library.py
 
 tests/        pytest suite; all HTTP is mocked via `responses` library
-docs/         STB protocol reference (authentication, live-tv, vod-series)
+docs/         STB protocol reference (authentication, live-tv, vod-series, library)
 spec/         Spec-driven feature specs (NNN-slug/{requirements,plan,implement}.md)
 ```
 
@@ -50,6 +52,28 @@ GET /vod/content/{id}/seasons/{sid}/episodes/{eid}/files    Episode files (multi
 GET /vod/content/{id}/seasons/{sid}/episodes/{eid}/files/{fid}/stream  302 redirect to file stream
 GET /vod/content/{id}/stream                                302 redirect to movie stream
 ```
+
+## Library Endpoints
+
+```
+POST   /library/add/{content_id}    Add content to library; body: {"name": str, "year": str, "is_series": bool}
+                                    Returns 201 with item + strm_count, 409 if already present
+GET    /library                     List all library items (each includes strm_count)
+DELETE /library/{content_id}        Remove item and delete .strm files; 204 on success, 404 if not found
+POST   /library/sync/{content_id}   Sync new episodes for a series; returns {"new_files": n}; 404 if not found
+POST   /library/sync                Sync all series; returns [{content_id, new_files}, ...]
+```
+
+## Library Environment Variables
+
+```
+STRM_OUTPUT_DIR          Root directory where .strm files are written (required)
+STRM_SERVER_BASE_URL     Base URL embedded in .strm files, reachable by Jellyfin at playback time (required)
+STRM_DB_PATH             Path to the SQLite library database (default: ./library.db)
+STRM_SYNC_INTERVAL_HOURS Hours between automatic background syncs (default: 6; 0 = disabled)
+```
+
+See `docs/library.md` for deployment details including Docker service name vs LAN IP vs reverse proxy.
 
 ## Code Style
 

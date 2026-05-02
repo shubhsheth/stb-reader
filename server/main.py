@@ -1,8 +1,11 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from stb_reader import STBClient
 from .config import Settings
+from .db import init_db
+from .sync import sync_all
 
 
 @asynccontextmanager
@@ -19,11 +22,33 @@ async def lifespan(app: FastAPI):
     )
     client.authenticate()
     app.state.client = client
+
+    db = init_db(settings.strm_db_path)
+    app.state.db = db
+    app.state.settings = settings
+
     from .routes.live_tv import router as live_tv_router
     from .routes.vod import router as vod_router
+    from .routes.library import router as library_router
     app.include_router(live_tv_router)
     app.include_router(vod_router)
+    app.include_router(library_router)
+
+    task = None
+    if settings.strm_sync_interval_hours > 0:
+        async def _sync_loop():
+            while True:
+                await asyncio.sleep(settings.strm_sync_interval_hours * 3600)
+                await asyncio.to_thread(
+                    sync_all, db, app.state.client.vod,
+                    settings.strm_output_dir, settings.strm_server_base_url,
+                )
+        task = asyncio.create_task(_sync_loop())
+
     yield
+
+    if task:
+        task.cancel()
 
 
 app = FastAPI(title="STB Reader", lifespan=lifespan)

@@ -8,6 +8,10 @@ from stb_reader.exceptions import NotFoundError, STBError, StreamError
 ENV_VARS = {
     "STB_PORTAL_URL": "http://portal.test",
     "STB_MAC": "00:1A:79:00:00:01",
+    "STRM_OUTPUT_DIR": "/tmp/strm_test",
+    "STRM_SERVER_BASE_URL": "http://localhost:8000",
+    "STRM_DB_PATH": ":memory:",
+    "STRM_SYNC_INTERVAL_HOURS": "0",
 }
 
 
