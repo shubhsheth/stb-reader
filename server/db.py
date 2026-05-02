@@ -29,6 +29,7 @@ def init_db(path: str) -> sqlite3.Connection:
             lock            INTEGER NOT NULL DEFAULT 0,
             portal_raw      TEXT,
             synced_at       TEXT,
+            content_hash    TEXT,
             in_library      INTEGER NOT NULL DEFAULT 0,
             added_at        TEXT,
             last_synced_at  TEXT
@@ -61,7 +62,9 @@ def init_db(path: str) -> sqlite3.Connection:
             last_sync_finished_at TEXT,
             last_sync_status      TEXT NOT NULL DEFAULT 'idle',
             content_count         INTEGER NOT NULL DEFAULT 0,
-            error_message         TEXT
+            error_message         TEXT,
+            last_synced_page      INTEGER NOT NULL DEFAULT 0,
+            last_full_sync_at     TEXT
         );
 
         INSERT OR IGNORE INTO vod_sync_state (id) VALUES (1);
@@ -87,14 +90,17 @@ def init_db(path: str) -> sqlite3.Connection:
 def upsert_vod_content(db: sqlite3.Connection, row: dict) -> dict | None:
     """Upsert a content row. Returns the existing row before update, or None if new."""
     existing = get_vod_content(db, row["content_id"])
+    row = {**row, "content_hash": row.get("content_hash")}
     db.execute(
         """
         INSERT INTO vod_content
             (content_id, name, cmd, screenshot_uri, genres, year, description,
-             rating, duration, is_series, fav, for_rent, lock, portal_raw, synced_at)
+             rating, duration, is_series, fav, for_rent, lock, portal_raw, synced_at,
+             content_hash)
         VALUES
             (:content_id, :name, :cmd, :screenshot_uri, :genres, :year, :description,
-             :rating, :duration, :is_series, :fav, :for_rent, :lock, :portal_raw, :synced_at)
+             :rating, :duration, :is_series, :fav, :for_rent, :lock, :portal_raw, :synced_at,
+             :content_hash)
         ON CONFLICT(content_id) DO UPDATE SET
             name           = excluded.name,
             cmd            = excluded.cmd,
@@ -109,7 +115,8 @@ def upsert_vod_content(db: sqlite3.Connection, row: dict) -> dict | None:
             for_rent       = excluded.for_rent,
             lock           = excluded.lock,
             portal_raw     = excluded.portal_raw,
-            synced_at      = excluded.synced_at
+            synced_at      = excluded.synced_at,
+            content_hash   = excluded.content_hash
         """,
         row,
     )
@@ -127,6 +134,19 @@ def get_vod_content(db: sqlite3.Connection, content_id: str) -> dict | None:
         "SELECT * FROM vod_content WHERE content_id = ?", (content_id,)
     ).fetchone()
     return dict(row) if row else None
+
+
+def get_content_hashes(db: sqlite3.Connection, content_ids: list[str]) -> dict[str, str]:
+    """Returns {content_id: content_hash} for the given IDs (omits rows with NULL hash)."""
+    if not content_ids:
+        return {}
+    placeholders = ",".join("?" * len(content_ids))
+    rows = db.execute(
+        f"SELECT content_id, content_hash FROM vod_content"
+        f" WHERE content_id IN ({placeholders})",
+        content_ids,
+    ).fetchall()
+    return {r[0]: r[1] for r in rows if r[1]}
 
 
 def count_vod_content(db: sqlite3.Connection) -> int:
