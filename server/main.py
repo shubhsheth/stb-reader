@@ -52,16 +52,16 @@ async def lifespan(app: FastAPI):
             settings.vod_sync_max_pages,
         )
 
+    if count_vod_content(db) == 0:
+        tasks.append(asyncio.create_task(_run_portal_sync()))
+
     if settings.vod_sync_interval_hours > 0:
         async def _sync_loop():
-            await _run_portal_sync()
             while True:
                 await asyncio.sleep(settings.vod_sync_interval_hours * 3600)
                 await _run_portal_sync()
 
         tasks.append(asyncio.create_task(_sync_loop()))
-    elif count_vod_content(db) == 0:
-        tasks.append(asyncio.create_task(_run_portal_sync()))
 
     yield
 
