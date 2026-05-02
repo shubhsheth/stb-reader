@@ -18,12 +18,12 @@ Currently `POST /library/add/{content_id}` requires the caller to supply `name`,
 
 ### Database Schema
 
-- **FR-1** A single `portal_content` table replaces the former `library_items` table and stores every VOD item synced from the portal. Columns: `content_id` (PK), `name`, `cmd`, `screenshot_uri`, `genres` (JSON array as TEXT), `year`, `description`, `rating`, `duration`, `is_series` (0/1), `fav`, `for_rent`, `lock`, `portal_raw` (full JSON blob), `synced_at` (ISO 8601 UTC), `in_library` (INTEGER DEFAULT 0), `added_at` (TEXT, NULL when not in library), `last_synced_at` (TEXT, NULL until first library sync).
-- **FR-2** A `portal_categories` table stores all portal categories: `category_id` (PK), `title`, `alias`, `synced_at`.
-- **FR-3** A `portal_content_category` join table links content to categories: `(content_id, category_id)` composite primary key, `content_id` references `portal_content`.
-- **FR-4** An FTS5 virtual table `portal_content_fts` indexes `content_id` (UNINDEXED), `name`, and `description`.
-- **FR-5** A `portal_sync_state` singleton table (enforced by `CHECK (id = 1)`) tracks: `last_sync_started_at`, `last_sync_finished_at`, `last_sync_status` (`idle` | `running` | `success` | `failed`), `content_count`, `error_message`.
-- **FR-6** The `strm_files` table retains its existing schema; its `content_id` FK references `portal_content` instead of the former `library_items`.
+- **FR-1** A single `vod_content` table replaces the former `library_items` table and stores every VOD item synced from the portal. Columns: `content_id` (PK), `name`, `cmd`, `screenshot_uri`, `genres` (JSON array as TEXT), `year`, `description`, `rating`, `duration`, `is_series` (0/1), `fav`, `for_rent`, `lock`, `portal_raw` (full JSON blob), `synced_at` (ISO 8601 UTC), `in_library` (INTEGER DEFAULT 0), `added_at` (TEXT, NULL when not in library), `last_synced_at` (TEXT, NULL until first library sync).
+- **FR-2** A `vod_categories` table stores all portal categories: `category_id` (PK), `title`, `alias`, `synced_at`.
+- **FR-3** A `vod_content_category` join table links content to categories: `(content_id, category_id)` composite primary key, `content_id` references `vod_content`.
+- **FR-4** An FTS5 virtual table `vod_content_fts` indexes `content_id` (UNINDEXED), `name`, and `description`.
+- **FR-5** A `vod_sync_state` singleton table (enforced by `CHECK (id = 1)`) tracks: `last_sync_started_at`, `last_sync_finished_at`, `last_sync_status` (`idle` | `running` | `success` | `failed`), `content_count`, `error_message`.
+- **FR-6** The `strm_files` table retains its existing schema; its `content_id` FK references `vod_content` instead of the former `library_items`.
 
 ### Sync Endpoints
 
@@ -36,17 +36,17 @@ Currently `POST /library/add/{content_id}` requires the caller to supply `name`,
 
 ### Library Endpoints (modified)
 
-- **FR-10** `POST /library/add/{content_id}` accepts no request body. Sets `in_library=1` and `added_at=now()` on the matching `portal_content` row. Returns `404` if `content_id` is not in `portal_content`. Returns `409` if already in library.
-- **FR-11** `GET /library` returns all `portal_content` rows where `in_library=1`, each including `strm_count` (subquery count from `strm_files`).
+- **FR-10** `POST /library/add/{content_id}` accepts no request body. Sets `in_library=1` and `added_at=now()` on the matching `vod_content` row. Returns `404` if `content_id` is not in `vod_content`. Returns `409` if already in library.
+- **FR-11** `GET /library` returns all `vod_content` rows where `in_library=1`, each including `strm_count` (subquery count from `strm_files`).
 - **FR-12** `DELETE /library/{content_id}` sets `in_library=0`, clears `added_at` and `last_synced_at`, and deletes all `strm_files` rows for that content. Returns `404` if not in library.
-- **FR-13** `POST /library/sync/{content_id}` and `POST /library/sync` continue to work as before; `set_last_synced` updates `last_synced_at` on `portal_content`.
+- **FR-13** `POST /library/sync/{content_id}` and `POST /library/sync` continue to work as before; `set_last_synced` updates `last_synced_at` on `vod_content`.
 
 ### Sync Strategy
 
 - **FR-14** The sync strategy fetches all categories first (one request), then fetches all content using `category_id="*"` pagination (N page requests). A second pass associates content to categories via per-category fetch. Sequential requests only — no concurrency.
 - **FR-15** A configurable delay of `portal_sync_request_delay_ms` (default 250 ms, min 0) is inserted between each portal HTTP request during sync.
 - **FR-16** A configurable `portal_sync_interval_hours` (default 24, 0 = disabled) controls the background re-sync schedule. On startup, if `portal_content` is empty a sync runs immediately regardless of interval.
-- **FR-17** Sync uses `INSERT OR REPLACE` so re-running is idempotent. `in_library`, `added_at`, and `last_synced_at` are preserved on upsert (not overwritten by sync). Rows not seen in the latest sync are NOT deleted.
+- **FR-17** Sync uses `INSERT OR REPLACE` so re-running is idempotent. `in_library`, `added_at`, and `last_synced_at` are preserved on upsert (not overwritten by sync). Rows not seen in the latest sync are NOT deleted from `vod_content`.
 - **FR-18** A configurable `portal_sync_max_pages` (default 0 = unlimited) caps the number of content pages fetched. When positive, sync stops after that many pages (for testing without a full sync).
 - **FR-19** Sync emits structured log lines at key points: sync started, each category fetched, each content page fetched (page number + cumulative count), sync finished (total count + duration), and each skipped page error.
 
@@ -94,14 +94,14 @@ Dev server:     uvicorn server.main:app --reload
 ```
 server/
   db.py              (MODIFIED) - replace library_items with portal_content; add portal tables via CREATE IF NOT EXISTS
-  portal_sync.py     (NEW)      - portal walking + rate-limited fetch loop + structured logging
+  vod_sync.py        (NEW)      - portal walking + rate-limited fetch loop + structured logging
   routes/vod.py      (MODIFIED) - add /vod/sync, /vod/sync/status, /vod/search
   routes/library.py  (MODIFIED) - update all CRUD to use portal_content; remove body from add
   config.py          (MODIFIED) - 3 new settings: portal_sync_interval_hours, portal_sync_request_delay_ms, portal_sync_max_pages
   main.py            (MODIFIED) - init new DB schema, mount updated routers, startup sync task
 
 tests/
-  test_portal_sync.py    (NEW)      - sync logic, rate limiting, max_pages cap, partial failure, upsert preserves in_library
+  test_vod_sync.py       (NEW)      - sync logic, rate limiting, max_pages cap, partial failure, upsert preserves in_library
   test_vod.py            (MODIFIED) - add tests for /vod/sync, /vod/sync/status, /vod/search
   test_library_routes.py (MODIFIED) - update all tests: no body, portal_content lookup, 404 when not cached
   test_library_db.py     (MODIFIED) - update CRUD tests for portal_content-based schema
@@ -111,12 +111,12 @@ tests/
 
 | Table | Role |
 |---|---|
-| `portal_content` | All portal VOD items + library membership (`in_library`, `added_at`, `last_synced_at`) |
-| `portal_categories` | Portal category list |
-| `portal_content_category` | Content↔category join |
-| `portal_content_fts` | FTS5 search index on name + description |
-| `portal_sync_state` | Singleton sync status/progress |
-| `strm_files` | Generated `.strm` file records (FK → `portal_content`) |
+| `vod_content` | All portal VOD items + library membership (`in_library`, `added_at`, `last_synced_at`) |
+| `vod_categories` | Portal category list |
+| `vod_content_category` | Content↔category join |
+| `vod_content_fts` | FTS5 search index on name + description |
+| `vod_sync_state` | Singleton sync status/progress |
+| `strm_files` | Generated `.strm` file records (FK → `vod_content`) |
 
 ## API Surface Summary
 
@@ -149,39 +149,39 @@ tests/
 # server/db.py — all tables in one init_db call
 def init_db(path: str) -> sqlite3.Connection:
     db.executescript("""
-        CREATE TABLE IF NOT EXISTS portal_content (
+        CREATE TABLE IF NOT EXISTS vod_content (
             content_id   TEXT PRIMARY KEY,
             ...
             in_library   INTEGER NOT NULL DEFAULT 0,
             added_at     TEXT,
             last_synced_at TEXT
         );
-        CREATE VIRTUAL TABLE IF NOT EXISTS portal_content_fts USING fts5(
+        CREATE VIRTUAL TABLE IF NOT EXISTS vod_content_fts USING fts5(
             content_id UNINDEXED, name, description
         );
-        CREATE TABLE IF NOT EXISTS portal_sync_state (
+        CREATE TABLE IF NOT EXISTS vod_sync_state (
             id INTEGER PRIMARY KEY CHECK (id = 1), ...
         );
-        INSERT OR IGNORE INTO portal_sync_state (id, last_sync_status) VALUES (1, 'idle');
+        INSERT OR IGNORE INTO vod_sync_state (id, last_sync_status) VALUES (1, 'idle');
         CREATE TABLE IF NOT EXISTS strm_files (
-            content_id TEXT NOT NULL REFERENCES portal_content(content_id), ...
+            content_id TEXT NOT NULL REFERENCES vod_content(content_id), ...
         );
     """)
 
-# server/portal_sync.py — structured logging
+# server/vod_sync.py — structured logging
 log = logging.getLogger(__name__)
 
 def run_sync(db, lock, vod, delay_ms, max_pages):
-    log.info("portal_sync.started")
+    log.info("vod_sync.started")
     ...
-    log.info("portal_sync.page", extra={"page": p, "cumulative": total})
-    log.info("portal_sync.finished", extra={"count": total, "duration_s": elapsed})
+    log.info("vod_sync.page", extra={"page": p, "cumulative": total})
+    log.info("vod_sync.finished", extra={"count": total, "duration_s": elapsed})
 ```
 
 ## Testing Strategy
 
 - Framework: pytest + responses (HTTP mocking), httpx (FastAPI TestClient)
-- `test_portal_sync.py`: mock `VODService`, assert page iteration, `time.sleep` mock for delay, `max_pages` cap, upsert idempotency, `in_library` preserved across re-sync
+- `test_vod_sync.py`: mock `VODService`, assert page iteration, `time.sleep` mock for delay, `max_pages` cap, upsert idempotency, `in_library` preserved across re-sync
 - `test_vod.py`: 202/409 for sync trigger, 503 on empty cache search, paginated results, `is_series` filter
 - `test_library_routes.py`: no body add returns 201, unknown id returns 404, delete clears `in_library` and removes strm_files
 - Coverage: new modules ≥ 90%
@@ -190,13 +190,13 @@ def run_sync(db, lock, vod, delay_ms, max_pages):
 
 - **Always:** run tests before committing; keep portal requests sequential during sync.
 - **Ask first:** adding any new Python dependency; changing `strm_files` columns.
-- **Never:** overwrite `in_library`/`added_at` during portal sync; block the event loop with sync I/O; run concurrent portal requests.
+- **Never:** overwrite `in_library`/`added_at` during vod sync; block the event loop with sync I/O; run concurrent portal requests.
 
 ## Success Criteria
 
 - SC-1: After `POST /vod/sync` completes, `GET /vod/sync/status` returns `status: success` and `content_count > 0`.
 - SC-2: `GET /vod/search?query=action` returns paginated results from `portal_content`.
-- SC-3: `POST /library/add/{content_id}` with no body and a known content_id returns 201; `portal_content.in_library` is set to 1.
+- SC-3: `POST /library/add/{content_id}` with no body and a known content_id returns 201; `vod_content.in_library` is set to 1.
 - SC-4: `POST /library/add/{content_id}` for an unknown content_id returns 404.
 - SC-5: Two concurrent `POST /vod/sync` calls: first 202, second 409.
 - SC-6: A portal page fetch error during sync is skipped; sync finishes with status `success`.
