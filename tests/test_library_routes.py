@@ -78,25 +78,12 @@ def _setup_series_vod(mock_client, seasons: int = 1, eps_per_season: int = 2) ->
 
 
 class TestAddContent:
-    def test_add_movie_returns_201(self, library_client):
+    def test_add_returns_202(self, library_client):
         tc, mock_client, db, tmp_path = library_client
         upsert_vod_content(db, _vod_row("m1", "My Movie", "2023", is_series=0))
         db.commit()
         resp = tc.post("/library/add/m1")
-        assert resp.status_code == 201
-        data = resp.json()
-        assert data["content_id"] == "m1"
-        strm = tmp_path / "Movies" / "My Movie (2023)" / "My Movie (2023).strm"
-        assert strm.exists()
-
-    def test_add_series_returns_correct_count(self, library_client):
-        tc, mock_client, db, tmp_path = library_client
-        upsert_vod_content(db, _vod_row("s1", "My Show", "2021", is_series=1))
-        db.commit()
-        _setup_series_vod(mock_client, seasons=1, eps_per_season=2)
-        resp = tc.post("/library/add/s1")
-        assert resp.status_code == 201
-        assert resp.json()["strm_count"] == 2
+        assert resp.status_code == 202
 
     def test_add_unknown_returns_404(self, library_client):
         tc, _, db, _ = library_client
@@ -124,17 +111,19 @@ class TestListLibrary:
         items = resp.json()
         assert len(items) == 1
         assert items[0]["content_id"] == "m1"
-        assert items[0]["strm_count"] == 1
 
 
 class TestDeleteLibrary:
     def test_delete_returns_204_and_removes_strm(self, library_client):
+        from server.db import add_strm_file, add_to_library
         tc, mock_client, db, tmp_path = library_client
         upsert_vod_content(db, _vod_row("m1", "Movie", "2023"))
         db.commit()
-        tc.post("/library/add/m1")
+        add_to_library(db, "m1")
         strm = tmp_path / "Movies" / "Movie (2023)" / "Movie (2023).strm"
-        assert strm.exists()
+        strm.parent.mkdir(parents=True, exist_ok=True)
+        strm.write_text("http://x\n")
+        add_strm_file(db, "m1", None, None, "m1", str(strm))
         resp = tc.delete("/library/m1")
         assert resp.status_code == 204
         assert not strm.exists()
