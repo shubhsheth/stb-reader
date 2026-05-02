@@ -1,10 +1,9 @@
 import pytest
-import sqlite3
 from pathlib import Path
 from unittest.mock import MagicMock
 
 from stb_reader.models import Season, Episode, EpisodeFile
-from server.db import init_db
+from server.db import init_db, upsert_vod_content
 from server.sync import (
     sanitize,
     parse_season_num,
@@ -21,6 +20,27 @@ from server.sync import (
 @pytest.fixture
 def db():
     return init_db(":memory:")
+
+
+def _seed(db, content_id, name, year, is_series=False):
+    upsert_vod_content(db, {
+        "content_id": content_id,
+        "name": name,
+        "cmd": f"/media/{content_id}.mpg",
+        "screenshot_uri": "",
+        "genres": "",
+        "year": year,
+        "description": "",
+        "rating": "",
+        "duration": 90,
+        "is_series": int(is_series),
+        "fav": 0,
+        "for_rent": 0,
+        "lock": 0,
+        "portal_raw": "{}",
+        "synced_at": "2024-01-01T00:00:00+00:00",
+    })
+    db.commit()
 
 
 def _make_vod(seasons: int, eps_per_season: int, files_per_episode: int = 1) -> MagicMock:
@@ -88,8 +108,9 @@ def test_write_strm_creates_file(tmp_path):
 # --- Core function tests ---
 
 def test_add_content_movie(db, tmp_path):
+    _seed(db, "m1", "My Movie", "2023", is_series=False)
     vod = MagicMock()
-    count = add_content(db, vod, str(tmp_path), "http://proxy:8000", "m1", "My Movie", "2023", False)
+    count = add_content(db, vod, str(tmp_path), "http://proxy:8000", "m1")
     assert count == 1
     path = tmp_path / "Movies" / "My Movie (2023)" / "My Movie (2023).strm"
     assert path.exists()
@@ -97,27 +118,29 @@ def test_add_content_movie(db, tmp_path):
 
 
 def test_add_content_series_2x2(db, tmp_path):
+    _seed(db, "s1", "My Show", "2021", is_series=True)
     vod = _make_vod(2, 2)
-    count = add_content(db, vod, str(tmp_path), "http://proxy:8000", "s1", "My Show", "2021", True)
+    count = add_content(db, vod, str(tmp_path), "http://proxy:8000", "s1")
     assert count == 4
 
 
-def test_add_content_duplicate_raises(db, tmp_path):
+def test_add_content_missing_raises_key_error(db, tmp_path):
     vod = MagicMock()
-    add_content(db, vod, str(tmp_path), "http://proxy:8000", "m1", "Movie", "2023", False)
-    with pytest.raises(sqlite3.IntegrityError):
-        add_content(db, vod, str(tmp_path), "http://proxy:8000", "m1", "Movie", "2023", False)
+    with pytest.raises(KeyError):
+        add_content(db, vod, str(tmp_path), "http://proxy:8000", "missing")
 
 
 def test_add_content_skips_episode_with_no_files(db, tmp_path):
+    _seed(db, "s1", "Show", "2020", is_series=True)
     vod = _make_vod(1, 2, files_per_episode=0)
-    count = add_content(db, vod, str(tmp_path), "http://proxy:8000", "s1", "Show", "2020", True)
+    count = add_content(db, vod, str(tmp_path), "http://proxy:8000", "s1")
     assert count == 0
 
 
 def test_sync_item_skips_existing_episodes(db, tmp_path):
+    _seed(db, "s1", "Show", "2020", is_series=True)
     vod = _make_vod(1, 2)
-    add_content(db, vod, str(tmp_path), "http://proxy:8000", "s1", "Show", "2020", True)
+    add_content(db, vod, str(tmp_path), "http://proxy:8000", "s1")
 
     new_ep = Episode(id="1_3", name="Episode 3", series_number="3", cmd="x")
     orig_side_effect = vod.get_episodes.side_effect
@@ -131,8 +154,9 @@ def test_sync_item_skips_existing_episodes(db, tmp_path):
 
 
 def test_sync_item_movie_noop(db, tmp_path):
+    _seed(db, "m1", "Movie", "2023", is_series=False)
     vod = MagicMock()
-    add_content(db, vod, str(tmp_path), "http://proxy:8000", "m1", "Movie", "2023", False)
+    add_content(db, vod, str(tmp_path), "http://proxy:8000", "m1")
     vod.reset_mock()
     result = sync_item(db, vod, str(tmp_path), "http://proxy:8000", "m1")
     assert result == 0
@@ -140,20 +164,21 @@ def test_sync_item_movie_noop(db, tmp_path):
 
 
 def test_sync_all_aggregates(db, tmp_path):
+    _seed(db, "s1", "Show A", "2020", is_series=True)
+    _seed(db, "s2", "Show B", "2021", is_series=True)
     vod_a = _make_vod(1, 1)
-    add_content(db, vod_a, str(tmp_path), "http://proxy:8000", "s1", "Show A", "2020", True)
-    vod_b = _make_vod(1, 1)
-    add_content(db, vod_b, str(tmp_path), "http://proxy:8000", "s2", "Show B", "2021", True)
+    add_content(db, vod_a, str(tmp_path), "http://proxy:8000", "s1")
+    add_content(db, vod_a, str(tmp_path), "http://proxy:8000", "s2")
 
-    # Both already fully synced — expect 0 new files each
     results = sync_all(db, vod_a, str(tmp_path), "http://proxy:8000")
     assert len(results) == 2
     assert all(r["new_files"] == 0 for r in results)
 
 
 def test_delete_content_removes_files(db, tmp_path):
+    _seed(db, "m1", "Movie", "2023", is_series=False)
     vod = MagicMock()
-    add_content(db, vod, str(tmp_path), "http://proxy:8000", "m1", "Movie", "2023", False)
+    add_content(db, vod, str(tmp_path), "http://proxy:8000", "m1")
     path = tmp_path / "Movies" / "Movie (2023)" / "Movie (2023).strm"
     assert path.exists()
     delete_content(db, "m1")

@@ -3,12 +3,13 @@ import sqlite3
 from pathlib import Path
 
 from .db import (
-    add_library_item,
     add_strm_file,
-    delete_library_item,
+    add_to_library,
     episode_exists,
     get_library_item,
     get_library_items,
+    get_vod_content,
+    remove_from_library,
     set_last_synced,
 )
 
@@ -93,11 +94,13 @@ def add_content(
     output_dir: str,
     server_base: str,
     content_id: str,
-    name: str,
-    year: str,
-    is_series: bool,
 ) -> int:
-    add_library_item(db, content_id, name, year, is_series)
+    """Add content_id to library (must already exist in vod_content). Returns strm count."""
+    item = get_vod_content(db, content_id)
+    if item is None:
+        raise KeyError(content_id)
+    add_to_library(db, content_id)
+    name, year, is_series = item["name"], item["year"], bool(item["is_series"])
     if not is_series:
         path = movie_strm_path(output_dir, name, year)
         url = f"{server_base}/vod/content/{content_id}/stream"
@@ -140,7 +143,7 @@ def sync_all(
 
 
 def delete_content(db: sqlite3.Connection, content_id: str) -> None:
-    paths = delete_library_item(db, content_id)
+    paths = remove_from_library(db, content_id)
     for p in paths:
         path = Path(p)
         path.unlink(missing_ok=True)

@@ -1,8 +1,50 @@
 import pytest
 import responses as responses_lib
+from unittest.mock import MagicMock, patch
+from fastapi.testclient import TestClient
 from stb_reader.vod import VODService
 from stb_reader.exceptions import NotFoundError, STBError, StreamError
+from stb_reader.models import Category, Content, PagedResult
 from tests.conftest import PORTAL_URL
+from server.db import init_db, upsert_vod_content
+
+
+BASE_ENV = {
+    "STB_PORTAL_URL": "http://portal.test",
+    "STB_MAC": "00:1A:79:00:00:01",
+    "STRM_SERVER_BASE_URL": "http://stb-reader:8000",
+    "VOD_SYNC_INTERVAL_HOURS": "0",
+}
+
+
+@pytest.fixture
+def vod_client(tmp_path):
+    real_db = init_db(":memory:")
+    mock_client = MagicMock()
+    mock_client.authenticate.return_value = None
+
+    env = {
+        **BASE_ENV,
+        "STRM_OUTPUT_DIR": str(tmp_path),
+        "STRM_DATA_DIR": str(tmp_path),
+    }
+
+    import server.main as main_mod
+    with patch.dict("os.environ", env):
+        with patch("server.main.STBClient", return_value=mock_client):
+            with patch("server.main.init_db", return_value=real_db):
+                with patch("server.main.count_vod_content", return_value=1):
+                    with TestClient(main_mod.app, raise_server_exceptions=False) as tc:
+                        yield tc, mock_client, real_db
+
+
+def _vod_row(content_id, name="Movie", year="2020", is_series=0):
+    return {
+        "content_id": content_id, "name": name, "cmd": "", "screenshot_uri": "",
+        "genres": "", "year": year, "description": f"Desc of {name}", "rating": "7.0",
+        "duration": 90, "is_series": is_series, "fav": 0, "for_rent": 0, "lock": 0,
+        "portal_raw": "{}", "synced_at": "2024-01-01T00:00:00+00:00",
+    }
 
 
 # --- get_categories ---
@@ -221,3 +263,69 @@ def test_get_stream_url_by_file_id_raises_when_not_found(session):
     svc = VODService(session)
     with pytest.raises(NotFoundError, match="file not found"):
         svc.get_stream_url_by_file_id("10", "1", "55", "999")
+
+
+# --- /vod/sync, /vod/sync/status, /vod/search ---
+
+class TestVodSync:
+    def test_trigger_sync_returns_202(self, vod_client):
+        tc, mock_client, db = vod_client
+        with patch("server.routes.vod.run_portal_sync"):
+            resp = tc.post("/vod/sync")
+        assert resp.status_code == 202
+
+    def test_trigger_sync_while_running_returns_409(self, vod_client):
+        from server.db import set_sync_state
+        tc, mock_client, db = vod_client
+        set_sync_state(db, last_sync_status="running")
+        resp = tc.post("/vod/sync")
+        assert resp.status_code == 409
+
+    def test_sync_status_returns_state(self, vod_client):
+        tc, mock_client, db = vod_client
+        resp = tc.get("/vod/sync/status")
+        assert resp.status_code == 200
+        assert resp.json()["last_sync_status"] == "idle"
+
+
+class TestVodSearch:
+    def test_search_returns_503_when_empty(self, vod_client):
+        from server.db import set_sync_state
+        tc, mock_client, db = vod_client
+        # db is empty — override the startup mock for this test
+        with patch("server.routes.vod.count_vod_content", return_value=0):
+            resp = tc.get("/vod/search?query=action")
+        assert resp.status_code == 503
+
+    def test_search_returns_matching_results(self, vod_client):
+        tc, mock_client, db = vod_client
+        upsert_vod_content(db, _vod_row("c1", "Action Hero"))
+        upsert_vod_content(db, _vod_row("c2", "Drama Queens"))
+        db.commit()
+        resp = tc.get("/vod/search?query=Action")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["content_id"] == "c1"
+
+    def test_search_is_series_filter(self, vod_client):
+        tc, mock_client, db = vod_client
+        upsert_vod_content(db, _vod_row("c1", "Action Movie", is_series=0))
+        upsert_vod_content(db, _vod_row("c2", "Action Show", is_series=1))
+        db.commit()
+        resp = tc.get("/vod/search?query=Action&is_series=1")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["content_id"] == "c2"
+
+    def test_search_pagination(self, vod_client):
+        tc, mock_client, db = vod_client
+        for i in range(5):
+            upsert_vod_content(db, _vod_row(f"c{i}", f"Action Film {i}"))
+        db.commit()
+        resp = tc.get("/vod/search?query=Action&page=1&page_size=2")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 5
+        assert len(data["items"]) == 2
