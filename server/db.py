@@ -1,5 +1,6 @@
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 def _now() -> str:
@@ -7,6 +8,8 @@ def _now() -> str:
 
 
 def init_db(path: str) -> sqlite3.Connection:
+    if path != ":memory:":
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path, check_same_thread=False)
     db.row_factory = sqlite3.Row
     db.executescript("""
