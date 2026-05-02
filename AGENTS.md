@@ -69,7 +69,7 @@ POST   /library/sync                Sync all series; returns [{content_id, new_f
 ```
 STRM_OUTPUT_DIR          Root directory where .strm files are written (required)
 STRM_SERVER_BASE_URL     Base URL embedded in .strm files, reachable by Jellyfin at playback time (required)
-STRM_DATA_DIR            Directory for the SQLite library database; DB created at {STRM_DATA_DIR}/library.db (required)
+STRM_DATA_DIR            Directory for the SQLite library database; DB created at {STRM_DATA_DIR}/data.db (required)
 STRM_SYNC_INTERVAL_HOURS Hours between automatic background syncs (default: 6; 0 = disabled)
 ```
 

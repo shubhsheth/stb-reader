@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
     client.authenticate()
     app.state.client = client
 
-    db = init_db(str(Path(settings.strm_data_dir) / "library.db"))
+    db = init_db(str(Path(settings.strm_data_dir) / "data.db"))
     app.state.db = db
     app.state.settings = settings
 
