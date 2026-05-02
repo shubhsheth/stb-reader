@@ -93,6 +93,7 @@ def run_portal_sync(
     log.info("vod_sync.started", extra={"max_pages": max_pages, "delay_ms": delay_ms})
 
     with lock:
+        prev_state = get_sync_state(db)
         set_sync_state(
             db,
             last_sync_status="running",
@@ -102,7 +103,7 @@ def run_portal_sync(
         )
 
     try:
-        _run_sync(db, lock, vod, output_dir, delay_ms, max_pages, t0, early_stop_pages, full_sync_days)
+        _run_sync(db, lock, vod, output_dir, delay_ms, max_pages, t0, early_stop_pages, full_sync_days, prev_state)
     except AuthError as exc:
         log.error("vod_sync.auth_failed", extra={"error": str(exc)})
         with lock:
@@ -125,16 +126,16 @@ def _run_sync(
     t0: float,
     early_stop_pages: int,
     full_sync_days: int,
+    prev_state: dict,
 ) -> None:
     delay_s = delay_ms / 1000.0
     seen_ids: set[str] = set()
 
     # --- Determine effective early-stop threshold ---
     # Force a full sync periodically to catch deleted content.
-    sync_state = get_sync_state(db)
     effective_early_stop = early_stop_pages
     if full_sync_days > 0:
-        last_full = sync_state.get("last_full_sync_at")
+        last_full = prev_state.get("last_full_sync_at")
         if last_full is None:
             effective_early_stop = 0
             log.info("vod_sync.full_sync_forced", extra={"reason": "no_previous_full_sync"})
@@ -146,8 +147,8 @@ def _run_sync(
                 log.info("vod_sync.full_sync_forced", extra={"reason": "scheduled", "age_days": age_days})
 
     # --- Determine resume page ---
-    prev_status = sync_state.get("last_sync_status", "idle")
-    prev_page = sync_state.get("last_synced_page", 0) or 0
+    prev_status = prev_state.get("last_sync_status", "idle")
+    prev_page = prev_state.get("last_synced_page", 0) or 0
     if prev_status in ("running", "failed") and prev_page > 0:
         start_page = prev_page + 1
         log.info("vod_sync.resuming", extra={"from_page": start_page})
@@ -197,7 +198,12 @@ def _run_sync(
             row = _build_content_row(vars(item) if hasattr(item, "__dict__") else item)
             rows_to_upsert.append((row, row["name"], row["year"]))
 
+        incoming_ids = [row["content_id"] for row, _, _ in rows_to_upsert]
+        incoming_hashes = {row["content_id"]: row["content_hash"] for row, _, _ in rows_to_upsert}
+
         with lock:
+            # Snapshot stored hashes before upserting so early-stop compares old vs new
+            pre_upsert_hashes = get_content_hashes(db, incoming_ids)
             for row, new_name, new_year in rows_to_upsert:
                 existing = get_vod_content(db, row["content_id"])
                 if existing and existing["in_library"] and _content_changed(existing, new_name, new_year):
@@ -221,10 +227,8 @@ def _run_sync(
 
         # --- Early-stop check ---
         if effective_early_stop > 0 and page_ids:
-            stored_hashes = get_content_hashes(db, page_ids)
-            incoming_hashes = {row["content_id"]: row["content_hash"] for row, _, _ in rows_to_upsert}
             page_stable = all(
-                stored_hashes.get(cid) == incoming_hashes[cid]
+                pre_upsert_hashes.get(cid) == incoming_hashes[cid]
                 for cid in page_ids
             )
             if page_stable:
