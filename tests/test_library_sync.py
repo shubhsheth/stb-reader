@@ -66,7 +66,7 @@ def _make_vod(seasons: int, eps_per_season: int, files_per_episode: int = 1) -> 
                 else []
             )
 
-    vod.get_episodes.side_effect = lambda cid, sid: ep_map[sid]
+    vod.get_episodes.side_effect = lambda cid, sid, delay_s=0: ep_map[sid]
     vod.get_episode_files.side_effect = lambda cid, sid, eid: file_map[eid]
     return vod
 
@@ -144,7 +144,7 @@ def test_sync_item_skips_existing_episodes(db, tmp_path):
 
     new_ep = Episode(id="1_3", name="Episode 3", series_number="3", cmd="x")
     orig_side_effect = vod.get_episodes.side_effect
-    vod.get_episodes.side_effect = lambda cid, sid: orig_side_effect(cid, sid) + [new_ep]
+    vod.get_episodes.side_effect = lambda cid, sid, delay_s=0: orig_side_effect(cid, sid) + [new_ep]
     vod.get_episode_files.side_effect = lambda cid, sid, eid: (
         [EpisodeFile(id=f"f_{eid}", name="HD", cmd="/media/x.mpg")]
     )
@@ -163,16 +163,15 @@ def test_sync_item_movie_noop(db, tmp_path):
     vod.get_seasons.assert_not_called()
 
 
-def test_sync_all_aggregates(db, tmp_path):
+def test_sync_all_processes_all_series(db, tmp_path):
     _seed(db, "s1", "Show A", "2020", is_series=True)
     _seed(db, "s2", "Show B", "2021", is_series=True)
-    vod_a = _make_vod(1, 1)
-    add_content(db, vod_a, str(tmp_path), "http://proxy:8000", "s1")
-    add_content(db, vod_a, str(tmp_path), "http://proxy:8000", "s2")
-
-    results = sync_all(db, vod_a, str(tmp_path), "http://proxy:8000")
-    assert len(results) == 2
-    assert all(r["new_files"] == 0 for r in results)
+    vod = _make_vod(1, 1)
+    add_content(db, vod, str(tmp_path), "http://proxy:8000", "s1")
+    add_content(db, vod, str(tmp_path), "http://proxy:8000", "s2")
+    # Both already synced — running again should not raise and should call get_seasons for each
+    sync_all(db, vod, str(tmp_path), "http://proxy:8000")
+    assert vod.get_seasons.call_count == 4  # 2 from add_content + 2 from sync_all
 
 
 def test_delete_content_removes_files(db, tmp_path):

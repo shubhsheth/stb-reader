@@ -81,10 +81,13 @@ class VODService:
             for s in raw.get("data", [])
         ]
 
-    def get_episodes(self, series_id: str, season_id: str) -> list[Episode]:
+    def get_episodes(self, series_id: str, season_id: str, delay_s: float = 0) -> list[Episode]:
+        import time
         episodes: list[Episode] = []
         page = 1
         while True:
+            if delay_s > 0 and page > 1:
+                time.sleep(delay_s)
             raw = self._s.get(
                 "vod",
                 "get_ordered_list",

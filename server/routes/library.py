@@ -1,3 +1,4 @@
+import asyncio
 import sqlite3
 
 from fastapi import APIRouter, HTTPException, Request
@@ -19,7 +20,8 @@ def add_library_content(content_id: str, request: Request):
         raise HTTPException(status_code=409, detail="Content already in library")
     try:
         strm_count = add_content(
-            db, vod, settings.strm_output_dir, settings.strm_server_base_url, content_id
+            db, vod, settings.strm_output_dir, settings.strm_server_base_url, content_id,
+            delay_s=settings.vod_sync_request_delay_ms / 1000,
         )
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=409, detail="Content already in library")
@@ -40,22 +42,27 @@ def remove_library_content(content_id: str, request: Request):
     delete_content(db, content_id)
 
 
-@router.post("/library/sync/{content_id}")
-def sync_library_content(content_id: str, request: Request):
+@router.post("/library/sync/{content_id}", status_code=204)
+async def sync_library_content(content_id: str, request: Request):
     db = request.app.state.db
     settings = request.app.state.settings
     vod = request.app.state.client.vod
     if get_library_item(db, content_id) is None:
         raise HTTPException(status_code=404, detail="Not found")
-    new_files = sync_item(
-        db, vod, settings.strm_output_dir, settings.strm_server_base_url, content_id
-    )
-    return {"new_files": new_files}
+    asyncio.create_task(asyncio.to_thread(
+        sync_item,
+        db, vod, settings.strm_output_dir, settings.strm_server_base_url, content_id,
+        settings.vod_sync_request_delay_ms / 1000,
+    ))
 
 
-@router.post("/library/sync")
-def sync_library_all(request: Request):
+@router.post("/library/sync", status_code=204)
+async def sync_library_all(request: Request):
     db = request.app.state.db
     settings = request.app.state.settings
     vod = request.app.state.client.vod
-    return sync_all(db, vod, settings.strm_output_dir, settings.strm_server_base_url)
+    asyncio.create_task(asyncio.to_thread(
+        sync_all,
+        db, vod, settings.strm_output_dir, settings.strm_server_base_url,
+        settings.vod_sync_request_delay_ms / 1000,
+    ))

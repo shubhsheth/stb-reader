@@ -73,7 +73,7 @@ def _setup_series_vod(mock_client, seasons: int = 1, eps_per_season: int = 2) ->
         for ep in eps:
             file_map[ep.id] = [EpisodeFile(id=f"f_{ep.id}", name="HD", cmd="/media/x.mpg")]
 
-    mock_client.vod.get_episodes.side_effect = lambda cid, sid: ep_map[sid]
+    mock_client.vod.get_episodes.side_effect = lambda cid, sid, delay_s=0: ep_map[sid]
     mock_client.vod.get_episode_files.side_effect = lambda cid, sid, eid: file_map.get(eid, [])
 
 
@@ -146,37 +146,25 @@ class TestDeleteLibrary:
 
 
 class TestSyncContent:
-    def test_sync_item_returns_new_file_count(self, library_client):
+    def test_sync_item_returns_204(self, library_client):
         tc, mock_client, db, tmp_path = library_client
         upsert_vod_content(db, _vod_row("s1", "Show", "2020", is_series=1))
         db.commit()
         _setup_series_vod(mock_client, seasons=1, eps_per_season=1)
         tc.post("/library/add/s1")
-
-        new_ep = Episode(id="1_2", name="Ep 2", series_number="2", cmd="x")
-        orig = mock_client.vod.get_episodes.side_effect
-        mock_client.vod.get_episodes.side_effect = lambda cid, sid: orig(cid, sid) + [new_ep]
-        mock_client.vod.get_episode_files.side_effect = lambda cid, sid, eid: (
-            [EpisodeFile(id=f"f_{eid}", name="HD", cmd="/media/x.mpg")]
-        )
-
         resp = tc.post("/library/sync/s1")
-        assert resp.status_code == 200
-        assert resp.json()["new_files"] == 1
+        assert resp.status_code == 204
 
     def test_sync_unknown_returns_404(self, library_client):
         tc, _, db, _ = library_client
         resp = tc.post("/library/sync/unknown")
         assert resp.status_code == 404
 
-    def test_sync_all_returns_summary(self, library_client):
+    def test_sync_all_returns_204(self, library_client):
         tc, mock_client, db, tmp_path = library_client
         upsert_vod_content(db, _vod_row("s1", "Show", "2020", is_series=1))
         db.commit()
         _setup_series_vod(mock_client, seasons=1, eps_per_season=1)
         tc.post("/library/add/s1")
         resp = tc.post("/library/sync")
-        assert resp.status_code == 200
-        results = resp.json()
-        assert isinstance(results, list)
-        assert results[0]["content_id"] == "s1"
+        assert resp.status_code == 204

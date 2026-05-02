@@ -60,12 +60,13 @@ def _write_series_strm_files(
     content_id: str,
     name: str,
     year: str,
+    delay_s: float = 0,
 ) -> int:
     count = 0
     seasons = vod.get_seasons(content_id)
     for s_idx, season in enumerate(seasons):
         season_num = parse_season_num(season.name, s_idx + 1)
-        episodes = vod.get_episodes(content_id, season.id)
+        episodes = vod.get_episodes(content_id, season.id, delay_s=delay_s)
         for e_idx, episode in enumerate(episodes):
             if episode_exists(db, content_id, season.id, episode.id):
                 continue
@@ -94,6 +95,7 @@ def add_content(
     output_dir: str,
     server_base: str,
     content_id: str,
+    delay_s: float = 0,
 ) -> int:
     """Add content_id to library (must already exist in vod_content). Returns strm count."""
     item = get_vod_content(db, content_id)
@@ -107,7 +109,7 @@ def add_content(
         write_strm(path, url)
         add_strm_file(db, content_id, None, None, content_id, str(path))
         return 1
-    return _write_series_strm_files(db, vod, output_dir, server_base, content_id, name, year)
+    return _write_series_strm_files(db, vod, output_dir, server_base, content_id, name, year, delay_s)
 
 
 def sync_item(
@@ -116,12 +118,13 @@ def sync_item(
     output_dir: str,
     server_base: str,
     content_id: str,
+    delay_s: float = 0,
 ) -> int:
     item = get_library_item(db, content_id)
     if item is None or not item["is_series"]:
         return 0
     count = _write_series_strm_files(
-        db, vod, output_dir, server_base, content_id, item["name"], item["year"]
+        db, vod, output_dir, server_base, content_id, item["name"], item["year"], delay_s
     )
     set_last_synced(db, content_id)
     return count
@@ -132,14 +135,12 @@ def sync_all(
     vod,
     output_dir: str,
     server_base: str,
-) -> list[dict]:
-    results = []
+    delay_s: float = 0,
+) -> None:
     for item in get_library_items(db):
         if not item["is_series"]:
             continue
-        new_files = sync_item(db, vod, output_dir, server_base, item["content_id"])
-        results.append({"content_id": item["content_id"], "new_files": new_files})
-    return results
+        sync_item(db, vod, output_dir, server_base, item["content_id"], delay_s)
 
 
 def delete_content(db: sqlite3.Connection, content_id: str) -> None:
