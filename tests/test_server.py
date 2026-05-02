@@ -8,6 +8,10 @@ from stb_reader.exceptions import NotFoundError, STBError, StreamError
 ENV_VARS = {
     "STB_PORTAL_URL": "http://portal.test",
     "STB_MAC": "00:1A:79:00:00:01",
+    "STRM_OUTPUT_DIR": "/tmp/strm_test",
+    "STRM_SERVER_BASE_URL": "http://localhost:8000",
+    "STRM_DATA_DIR": "/tmp/strm_test",
+    "STRM_SYNC_INTERVAL_HOURS": "0",
 }
 
 
@@ -21,10 +25,13 @@ def mock_client():
 @pytest.fixture
 def test_client(mock_client):
     import server.main as main_mod
+    from server.db import init_db
+    real_db = init_db(":memory:")
     with patch.dict("os.environ", ENV_VARS):
         with patch("server.main.STBClient", return_value=mock_client):
-            with TestClient(main_mod.app, raise_server_exceptions=False) as tc:
-                yield tc, mock_client
+            with patch("server.main.init_db", return_value=real_db):
+                with TestClient(main_mod.app, raise_server_exceptions=False) as tc:
+                    yield tc, mock_client
 
 
 # --- Health ---

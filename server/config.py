@@ -12,3 +12,10 @@ class Settings(BaseSettings):
     stb_portal_path: str = "stalker_portal/c/portal.php"
     port: int = 8000
     log_level: str = "INFO"
+
+    strm_output_dir: str
+    strm_server_base_url: str
+    strm_data_dir: str
+    vod_sync_interval_hours: int = 24
+    vod_sync_request_delay_ms: int = 250
+    vod_sync_max_pages: int = 0

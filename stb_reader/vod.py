@@ -81,23 +81,36 @@ class VODService:
             for s in raw.get("data", [])
         ]
 
-    def get_episodes(self, series_id: str, season_id: str) -> list[Episode]:
-        raw = self._s.get(
-            "vod",
-            "get_ordered_list",
-            movie_id=series_id,
-            season_id=season_id,
-            episode_id=0,
-        )
-        return [
-            Episode(
-                id=str(e["id"]),
-                name=e.get("name", ""),
-                series_number=str(e.get("series_number", "")),
-                cmd=e.get("cmd", ""),
+    def get_episodes(self, series_id: str, season_id: str, delay_s: float = 0) -> list[Episode]:
+        import time
+        episodes: list[Episode] = []
+        page = 1
+        while True:
+            if delay_s > 0 and page > 1:
+                time.sleep(delay_s)
+            raw = self._s.get(
+                "vod",
+                "get_ordered_list",
+                movie_id=series_id,
+                season_id=season_id,
+                episode_id=0,
+                p=page,
             )
-            for e in raw.get("data", [])
-        ]
+            episodes.extend(
+                Episode(
+                    id=str(e["id"]),
+                    name=e.get("name", ""),
+                    series_number=str(e.get("series_number", "")),
+                    cmd=e.get("cmd", ""),
+                )
+                for e in raw.get("data", [])
+            )
+            total = int(raw.get("total_items", 0))
+            per_page = int(raw.get("max_page_items", total)) or total
+            if per_page == 0 or page * per_page >= total:
+                break
+            page += 1
+        return episodes
 
     def get_episode_files(self, series_id: str, season_id: str, episode_id: str) -> list[EpisodeFile]:
         raw = self._s.get(
