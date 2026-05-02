@@ -118,7 +118,8 @@ def test_get_seasons_returns_list(session):
 def test_get_episodes_returns_list(session):
     responses_lib.add(
         responses_lib.GET, PORTAL_URL,
-        json={"js": {"data": [{"id": "99", "name": "Pilot", "series_number": "1", "cmd": "http://ep"}]}},
+        json={"js": {"data": [{"id": "99", "name": "Pilot", "series_number": "1", "cmd": "http://ep"}],
+                     "total_items": 1, "max_page_items": 14}},
     )
     svc = VODService(session)
     eps = svc.get_episodes("50", "1")
@@ -128,6 +129,25 @@ def test_get_episodes_returns_list(session):
     url = responses_lib.calls[0].request.url
     assert "movie_id=50" in url
     assert "season_id=1" in url
+
+
+@responses_lib.activate
+def test_get_episodes_paginates_all_pages(session):
+    page1 = [{"id": str(i), "name": f"Ep {i}", "series_number": str(i), "cmd": ""} for i in range(1, 15)]
+    page2 = [{"id": str(i), "name": f"Ep {i}", "series_number": str(i), "cmd": ""} for i in range(15, 21)]
+    responses_lib.add(
+        responses_lib.GET, PORTAL_URL,
+        json={"js": {"data": page1, "total_items": 20, "max_page_items": 14}},
+    )
+    responses_lib.add(
+        responses_lib.GET, PORTAL_URL,
+        json={"js": {"data": page2, "total_items": 20, "max_page_items": 14}},
+    )
+    svc = VODService(session)
+    eps = svc.get_episodes("50", "1")
+    assert len(eps) == 20
+    assert len(responses_lib.calls) == 2
+    assert "p=2" in responses_lib.calls[1].request.url
 
 
 # --- get_stream_url ---
