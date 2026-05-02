@@ -2,7 +2,7 @@ import asyncio
 
 from fastapi import APIRouter, HTTPException, Request
 
-from ..db import get_library_item, get_library_items, get_vod_content
+from ..db import add_to_library, get_library_item, get_library_items, get_vod_content
 from ..sync import add_content, delete_content, sync_all, sync_item
 
 router = APIRouter(tags=["library"])
@@ -17,6 +17,7 @@ async def add_library_content(content_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Content not found in portal cache")
     if get_library_item(db, content_id) is not None:
         raise HTTPException(status_code=409, detail="Content already in library")
+    add_to_library(db, content_id)
     asyncio.create_task(asyncio.to_thread(
         add_content,
         db, vod, settings.strm_output_dir, settings.strm_server_base_url, content_id,
