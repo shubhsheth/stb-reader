@@ -15,5 +15,5 @@ class Settings(BaseSettings):
 
     strm_output_dir: str
     strm_server_base_url: str
-    strm_db_path: str = "./library.db"
+    strm_data_dir: str
     strm_sync_interval_hours: int = 6

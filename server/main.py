@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from stb_reader import STBClient
 from .config import Settings
@@ -23,7 +24,7 @@ async def lifespan(app: FastAPI):
     client.authenticate()
     app.state.client = client
 
-    db = init_db(settings.strm_db_path)
+    db = init_db(str(Path(settings.strm_data_dir) / "library.db"))
     app.state.db = db
     app.state.settings = settings
 

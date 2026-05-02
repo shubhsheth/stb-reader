@@ -23,7 +23,7 @@ def library_client(tmp_path):
     env = {
         **BASE_ENV,
         "STRM_OUTPUT_DIR": str(tmp_path),
-        "STRM_DB_PATH": ":memory:",
+        "STRM_DATA_DIR": str(tmp_path),
     }
 
     import server.main as main_mod

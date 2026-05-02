@@ -102,10 +102,10 @@ Filenames are sanitised: the characters `/ \ : * ? " < > |` are replaced with `-
 |---|---|---|---|
 | `STRM_OUTPUT_DIR` | yes | — | Root directory for `.strm` files |
 | `STRM_SERVER_BASE_URL` | yes | — | Base URL embedded in `.strm` files (see below) |
-| `STRM_DB_PATH` | no | `./library.db` | Path to the SQLite library database |
+| `STRM_DATA_DIR` | yes | — | Directory for persistent data; DB created at `{STRM_DATA_DIR}/library.db` |
 | `STRM_SYNC_INTERVAL_HOURS` | no | `6` | Hours between background syncs; `0` disables |
 
-The server refuses to start if either required variable is missing or empty.
+The server refuses to start if any required variable is missing or empty.
 
 ---
 
