@@ -16,4 +16,6 @@ class Settings(BaseSettings):
     strm_output_dir: str
     strm_server_base_url: str
     strm_data_dir: str
-    strm_sync_interval_hours: int = 6
+    vod_sync_interval_hours: int = 24
+    vod_sync_request_delay_ms: int = 250
+    vod_sync_max_pages: int = 0
