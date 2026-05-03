@@ -25,20 +25,32 @@ stb_reader/   Core pip-installable library; no FastAPI dependency
   exceptions.py  STBError, AuthError, StreamError
 
 server/       FastAPI + Uvicorn HTTP layer
-  main.py     App factory and lifespan
+  main.py     App factory and lifespan; mounts static/ at /
   config.py   Environment variable settings
   db.py       SQLite schema and CRUD for the library
   sync.py     Portal-walking logic: add_content(), sync_item(), delete_content()
   routes/     live_tv.py, vod.py, library.py
+  static/     Frontend assets served at /
+    index.html  Single-page search + library management UI
 
 tests/        pytest suite; all HTTP is mocked via `responses` library
 docs/         STB protocol reference (authentication, live-tv, vod-series, library)
 spec/         Spec-driven feature specs (NNN-slug/{requirements,plan,implement}.md)
 ```
 
+## Frontend
+
+Single-page UI served at `GET /`. Plain HTML/CSS/JS — no build step, no external dependencies.
+
+- Search VOD content via the search bar (calls `GET /vod/search`)
+- Filter by All / Movies / Series
+- Add or Remove items from the library with one click
+- Paginated results (25 per page)
+
 ## REST API Endpoints
 
 ```
+GET /                                           Web UI (static HTML)
 GET /health                                     Health check
 GET /live-tv/genres                             List channel genres
 GET /live-tv/channels                           Paginated channel list

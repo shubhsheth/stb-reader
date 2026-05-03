@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>STB Reader</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #111;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1a1a1a;
+      border-bottom: 1px solid #2a2a2a;
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    header h1 { font-size: 1.2rem; color: #fff; white-space: nowrap; }
+
+    #search-form {
+      display: flex;
+      gap: 0.5rem;
+      flex: 1;
+    }
+
+    #query {
+      flex: 1;
+      padding: 0.45rem 0.75rem;
+      background: #252525;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-size: 0.95rem;
+    }
+
+    #query:focus { outline: none; border-color: #555; }
+
+    button {
+      padding: 0.45rem 0.9rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: opacity 0.15s;
+    }
+
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    #search-btn { background: #3a3a3a; color: #e0e0e0; }
+    #search-btn:hover:not(:disabled) { background: #484848; }
+
+    #filters {
+      display: flex;
+      gap: 0.4rem;
+      padding: 0.75rem 1.5rem;
+      background: #151515;
+      border-bottom: 1px solid #222;
+    }
+
+    .filter-btn {
+      background: #252525;
+      color: #aaa;
+      border: 1px solid #333;
+      padding: 0.3rem 0.75rem;
+      font-size: 0.8rem;
+    }
+
+    .filter-btn.active {
+      background: #3a3a3a;
+      color: #fff;
+      border-color: #555;
+    }
+
+    .filter-btn:hover:not(.active) { background: #2e2e2e; color: #ccc; }
+
+    #status-bar {
+      padding: 0.5rem 1.5rem;
+      font-size: 0.8rem;
+      color: #666;
+      min-height: 1.8rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    #spinner {
+      display: none;
+      width: 14px; height: 14px;
+      border: 2px solid #444;
+      border-top-color: #aaa;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #error-msg {
+      color: #e07070;
+      font-size: 0.85rem;
+      padding: 0.5rem 1.5rem;
+      display: none;
+    }
+
+    #results {
+      padding: 0 1.5rem 2rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      margin-top: 0.5rem;
+    }
+
+    thead th {
+      text-align: left;
+      padding: 0.6rem 0.75rem;
+      color: #777;
+      font-weight: 500;
+      border-bottom: 1px solid #222;
+      white-space: nowrap;
+    }
+
+    tbody tr { border-bottom: 1px solid #1e1e1e; }
+    tbody tr:hover { background: #181818; }
+
+    td {
+      padding: 0.55rem 0.75rem;
+      vertical-align: middle;
+      color: #ccc;
+    }
+
+    td.title { color: #e8e8e8; font-weight: 500; }
+
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.45rem;
+      border-radius: 3px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .badge-series { background: #1e3a5f; color: #7ab8f5; }
+    .badge-movie  { background: #1e3a22; color: #7ae07a; }
+
+    .btn-add    { background: #1a4a1a; color: #7ae07a; }
+    .btn-add:hover:not(:disabled)    { background: #225522; }
+    .btn-remove { background: #4a1a1a; color: #e07a7a; }
+    .btn-remove:hover:not(:disabled) { background: #552222; }
+
+    #pagination {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1rem 1.5rem;
+      font-size: 0.85rem;
+      color: #777;
+    }
+
+    .page-btn { background: #252525; color: #aaa; border: 1px solid #333; }
+    .page-btn:hover:not(:disabled) { background: #2e2e2e; color: #ccc; }
+
+    #no-results {
+      padding: 2rem 1.5rem;
+      color: #555;
+      font-size: 0.9rem;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>STB Reader</h1>
+  <form id="search-form">
+    <input id="query" type="search" placeholder="Search titles…" autocomplete="off">
+    <button id="search-btn" type="submit">Search</button>
+  </form>
+</header>
+
+<div id="filters">
+  <button class="filter-btn active" data-filter="">All</button>
+  <button class="filter-btn" data-filter="0">Movies</button>
+  <button class="filter-btn" data-filter="1">Series</button>
+</div>
+
+<div id="status-bar">
+  <div id="spinner"></div>
+  <span id="status-text"></span>
+</div>
+
+<div id="error-msg"></div>
+
+<div id="results"></div>
+<div id="no-results">No results found.</div>
+
+<div id="pagination">
+  <button class="page-btn" id="prev-btn" disabled>&#8592; Prev</button>
+  <span id="page-info"></span>
+  <button class="page-btn" id="next-btn" disabled>Next &#8594;</button>
+</div>
+
+<script>
+  const PAGE_SIZE = 25;
+
+  let state = {
+    query: '',
+    filter: '',   // '' | '0' | '1'
+    page: 1,
+    total: 0,
+    libraryIds: new Set(),
+    loading: false,
+  };
+
+  // ── API ──────────────────────────────────────────────────────────────────
+
+  async function apiFetch(path, opts = {}) {
+    const res = await fetch(path, opts);
+    if (!res.ok) {
+      let msg;
+      try { msg = (await res.json()).detail ?? res.statusText; }
+      catch { msg = res.statusText; }
+      throw new Error(`${res.status}: ${msg}`);
+    }
+    return res.status === 204 ? null : res.json();
+  }
+
+  async function loadLibrary() {
+    const items = await apiFetch('/library');
+    state.libraryIds = new Set(items.map(i => i.content_id));
+  }
+
+  async function searchVod(page = 1) {
+    const params = new URLSearchParams({ query: state.query, page, page_size: PAGE_SIZE });
+    if (state.filter !== '') params.set('is_series', state.filter);
+    return apiFetch(`/vod/search?${params}`);
+  }
+
+  async function addToLibrary(contentId) {
+    await apiFetch(`/library/add/${contentId}`, { method: 'POST' });
+    state.libraryIds.add(contentId);
+  }
+
+  async function removeFromLibrary(contentId) {
+    await apiFetch(`/library/${contentId}`, { method: 'DELETE' });
+    state.libraryIds.delete(contentId);
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────
+
+  function setLoading(on) {
+    state.loading = on;
+    document.getElementById('spinner').style.display = on ? 'block' : 'none';
+    document.getElementById('search-btn').disabled = on;
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('error-msg');
+    el.textContent = msg;
+    el.style.display = msg ? 'block' : 'none';
+  }
+
+  function showStatus(text) {
+    document.getElementById('status-text').textContent = text;
+  }
+
+  function renderResults(items) {
+    const container = document.getElementById('results');
+    const noResults = document.getElementById('no-results');
+
+    if (items.length === 0) {
+      container.innerHTML = '';
+      noResults.style.display = 'block';
+      return;
+    }
+
+    noResults.style.display = 'none';
+
+    const rows = items.map(item => {
+      const inLib = item.in_library === 1 || state.libraryIds.has(item.content_id);
+      const badge = item.is_series
+        ? '<span class="badge badge-series">Series</span>'
+        : '<span class="badge badge-movie">Movie</span>';
+      const genres = item.genres ?? '';
+      const year = item.year ?? '';
+      const rating = item.rating ?? '';
+      const dur = item.duration ? `${Math.round(item.duration / 60)}m` : '';
+
+      return `<tr data-id="${item.content_id}">
+        <td class="title">${esc(item.name)}</td>
+        <td>${badge}</td>
+        <td>${esc(year)}</td>
+        <td>${esc(genres)}</td>
+        <td>${esc(rating)}</td>
+        <td>${esc(dur)}</td>
+        <td>${renderButton(item.content_id, inLib)}</td>
+      </tr>`;
+    }).join('');
+
+    container.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Title</th><th>Type</th><th>Year</th><th>Genres</th>
+            <th>Rating</th><th>Duration</th><th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  function renderButton(contentId, inLib) {
+    if (inLib) {
+      return `<button class="btn-remove" data-action="remove" data-id="${contentId}">Remove</button>`;
+    }
+    return `<button class="btn-add" data-action="add" data-id="${contentId}">Add</button>`;
+  }
+
+  function updateRowButton(contentId, inLib) {
+    const row = document.querySelector(`tr[data-id="${contentId}"]`);
+    if (row) row.querySelector('td:last-child').innerHTML = renderButton(contentId, inLib);
+  }
+
+  function renderPagination() {
+    const totalPages = Math.ceil(state.total / PAGE_SIZE);
+    const prevBtn = document.getElementById('prev-btn');
+    const nextBtn = document.getElementById('next-btn');
+    const info = document.getElementById('page-info');
+
+    const visible = state.total > 0;
+    document.getElementById('pagination').style.visibility = visible ? 'visible' : 'hidden';
+
+    if (!visible) return;
+
+    prevBtn.disabled = state.page <= 1;
+    nextBtn.disabled = state.page >= totalPages;
+    info.textContent = `Page ${state.page} of ${totalPages} (${state.total} results)`;
+  }
+
+  // ── Actions ──────────────────────────────────────────────────────────────
+
+  async function runSearch(page = 1) {
+    if (!state.query) return;
+    showError('');
+    setLoading(true);
+    showStatus('Searching…');
+    try {
+      const data = await searchVod(page);
+      state.page = page;
+      state.total = data.total;
+      renderResults(data.items);
+      renderPagination();
+      showStatus(state.total ? '' : '');
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setLoading(false);
+      showStatus('');
+    }
+  }
+
+  async function handleLibraryAction(contentId, action) {
+    showError('');
+    const btn = document.querySelector(`tr[data-id="${contentId}"] button`);
+    if (btn) btn.disabled = true;
+    try {
+      if (action === 'add') {
+        await addToLibrary(contentId);
+        updateRowButton(contentId, true);
+      } else {
+        await removeFromLibrary(contentId);
+        updateRowButton(contentId, false);
+      }
+    } catch (err) {
+      showError(err.message);
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // ── Event wiring ─────────────────────────────────────────────────────────
+
+  document.getElementById('search-form').addEventListener('submit', e => {
+    e.preventDefault();
+    state.query = document.getElementById('query').value.trim();
+    runSearch(1);
+  });
+
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.filter = btn.dataset.filter;
+      if (state.query) runSearch(1);
+    });
+  });
+
+  document.getElementById('results').addEventListener('click', e => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    handleLibraryAction(btn.dataset.id, btn.dataset.action);
+  });
+
+  document.getElementById('prev-btn').addEventListener('click', () => {
+    if (state.page > 1) runSearch(state.page - 1);
+  });
+
+  document.getElementById('next-btn').addEventListener('click', () => {
+    const totalPages = Math.ceil(state.total / PAGE_SIZE);
+    if (state.page < totalPages) runSearch(state.page + 1);
+  });
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+
+  function esc(str) {
+    return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  document.getElementById('pagination').style.visibility = 'hidden';
+
+  loadLibrary().catch(() => {});
+</script>
+</body>
+</html>

@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from stb_reader import STBClient
 
 from .config import Settings
@@ -40,6 +41,7 @@ async def lifespan(app: FastAPI):
     app.include_router(live_tv_router)
     app.include_router(vod_router)
     app.include_router(library_router)
+    app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")
 
     tasks = []
 
