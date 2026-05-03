@@ -94,6 +94,39 @@ def test_get_content_parses_content(session):
     assert result.items[0].is_series is False
 
 
+
+@responses_lib.activate
+def test_get_content_is_series_string_zero_is_false(session):
+    item = {
+        "id": "101", "name": "A Movie", "cmd": "", "screenshot_uri": "",
+        "genres_str": "", "year": "2020", "description": "", "rating_imdb": "",
+        "time": "90", "is_series": "0", "fav": False,
+    }
+    responses_lib.add(
+        responses_lib.GET, PORTAL_URL,
+        json={"js": {"data": [item], "total_items": 1, "max_page_items": 14}},
+    )
+    svc = VODService(session)
+    result = svc.get_content()
+    assert result.items[0].is_series is False
+
+
+@responses_lib.activate
+def test_get_content_is_series_string_one_is_true(session):
+    item = {
+        "id": "102", "name": "A Show", "cmd": "", "screenshot_uri": "",
+        "genres_str": "", "year": "2021", "description": "", "rating_imdb": "",
+        "time": "30", "is_series": "1", "fav": False,
+    }
+    responses_lib.add(
+        responses_lib.GET, PORTAL_URL,
+        json={"js": {"data": [item], "total_items": 1, "max_page_items": 14}},
+    )
+    svc = VODService(session)
+    result = svc.get_content()
+    assert result.items[0].is_series is True
+
+
 # --- get_seasons ---
 
 @responses_lib.activate

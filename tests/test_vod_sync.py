@@ -14,7 +14,7 @@ from server.db import (
     set_sync_state,
     upsert_vod_content,
 )
-from server.vod_sync import _content_hash, run_portal_sync
+from server.vod_sync import _build_content_row, _content_hash, run_portal_sync
 from stb_reader.exceptions import AuthError, STBError
 from stb_reader.models import Category, Content, PagedResult
 
@@ -210,6 +210,20 @@ def test_sync_auth_error_sets_failed(db, lock):
 
 # ---------------------------------------------------------------------------
 # _content_hash
+# ---------------------------------------------------------------------------
+# _build_content_row: is_series string conversion
+# ---------------------------------------------------------------------------
+
+def test_build_content_row_is_series_string_zero():
+    row = _build_content_row({"id": "1", "name": "Movie", "is_series": "0"})
+    assert row["is_series"] == 0
+
+
+def test_build_content_row_is_series_string_one():
+    row = _build_content_row({"id": "2", "name": "Show", "is_series": "1"})
+    assert row["is_series"] == 1
+
+
 # ---------------------------------------------------------------------------
 
 def test_content_hash_same_inputs_same_hash():

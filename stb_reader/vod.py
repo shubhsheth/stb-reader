@@ -52,7 +52,7 @@ class VODService:
                 description=c.get("description", ""),
                 rating=str(c.get("rating_imdb", "")),
                 duration=str(c.get("time", "")),
-                is_series=bool(c.get("is_series", False)),
+                is_series=bool(int(c.get("is_series") or 0)),
                 fav=bool(c.get("fav", False)),
             )
             for c in raw.get("data", [])
