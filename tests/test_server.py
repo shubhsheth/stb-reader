@@ -220,7 +220,7 @@ _VOD_ROW = {
     "content_id": "c1",
     "name": "Test Movie",
     "cmd": "/media/c1.mpg",
-    "screenshot_uri": "http://portal.test/images/c1.jpg",
+    "screenshot_uri": "/stalker_portal/screenshots/c1.jpg",
     "genres": "Action",
     "year": "2023",
     "description": "A film",
@@ -242,7 +242,7 @@ class TestScreenshot:
         upsert_vod_content(db, _VOD_ROW)
         resp = tc.get("/vod/content/c1/screenshot", follow_redirects=False)
         assert resp.status_code == 302
-        assert resp.headers["location"] == "http://portal.test/images/c1.jpg"
+        assert resp.headers["location"] == "http://portal.test/stalker_portal/screenshots/c1.jpg"
 
     def test_404_when_content_not_found(self, test_client):
         tc, _ = test_client

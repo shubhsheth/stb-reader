@@ -67,7 +67,9 @@ def get_content_screenshot(content_id: str, request: Request):
     row = get_vod_content(request.app.state.db, content_id)
     if not row or not row.get("screenshot_uri"):
         raise HTTPException(status_code=404, detail="No screenshot available")
-    return RedirectResponse(url=row["screenshot_uri"], status_code=302)
+    portal_url = request.app.state.settings.stb_portal_url.rstrip("/")
+    path = row["screenshot_uri"].lstrip("/")
+    return RedirectResponse(url=f"{portal_url}/{path}", status_code=302)
 
 
 @router.get("/content/{content_id}/stream")
