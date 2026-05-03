@@ -173,3 +173,55 @@ def test_set_sync_state(db):
     state = get_sync_state(db)
     assert state["last_sync_status"] == "running"
     assert state["content_count"] == 42
+
+
+def test_init_db_migrates_old_schema():
+    """init_db must add new columns to a database created with an older schema."""
+    import tempfile, os
+    from server.db import MIGRATIONS
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        path = f.name
+    try:
+        # Build a minimal old-schema database (missing last_synced_page / last_full_sync_at)
+        old = sqlite3.connect(path)
+        old.executescript("""
+            CREATE TABLE vod_content (
+                content_id TEXT PRIMARY KEY, name TEXT NOT NULL,
+                cmd TEXT NOT NULL DEFAULT '', screenshot_uri TEXT,
+                genres TEXT, year TEXT NOT NULL DEFAULT '',
+                description TEXT, rating TEXT, duration INTEGER,
+                is_series INTEGER NOT NULL DEFAULT 0,
+                fav INTEGER NOT NULL DEFAULT 0,
+                for_rent INTEGER NOT NULL DEFAULT 0,
+                lock INTEGER NOT NULL DEFAULT 0,
+                portal_raw TEXT, synced_at TEXT
+            );
+            CREATE TABLE vod_sync_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                last_sync_started_at TEXT, last_sync_finished_at TEXT,
+                last_sync_status TEXT NOT NULL DEFAULT 'idle'
+            );
+            INSERT INTO vod_sync_state (id) VALUES (1);
+        """)
+        old.close()
+
+        db = init_db(path)
+        # These calls must not raise OperationalError
+        set_sync_state(db, last_synced_page=5, last_full_sync_at="2024-01-01T00:00:00+00:00")
+        state = get_sync_state(db)
+        assert state["last_synced_page"] == 5
+        assert state["last_full_sync_at"] == "2024-01-01T00:00:00+00:00"
+        # Schema version must equal the number of applied migrations
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+        assert version == len(MIGRATIONS)
+        db.close()
+    finally:
+        os.unlink(path)
+
+
+def test_init_db_fresh_schema_has_correct_version():
+    """A brand-new database must have user_version == len(MIGRATIONS)."""
+    from server.db import MIGRATIONS
+    db = init_db(":memory:")
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    assert version == len(MIGRATIONS)

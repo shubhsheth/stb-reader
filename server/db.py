@@ -7,6 +7,47 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# ---------------------------------------------------------------------------
+# Schema migrations
+# ---------------------------------------------------------------------------
+
+def _add_col(table: str, col: str, defn: str):
+    """Return a migration step that adds a column only when it is absent."""
+    def _step(db: sqlite3.Connection) -> None:
+        existing = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
+        if col not in existing:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {defn}")
+    return _step
+
+
+# Append-only — never insert, delete, or reorder entries.
+# list index + 1  ==  schema version stored in PRAGMA user_version.
+# Simple column additions: use _add_col().
+# Multi-statement / FTS / data migrations: define a named function above and
+# append it here.
+MIGRATIONS: list = [
+    _add_col("vod_content",    "content_hash",       "TEXT"),
+    _add_col("vod_content",    "in_library",          "INTEGER NOT NULL DEFAULT 0"),
+    _add_col("vod_content",    "added_at",            "TEXT"),
+    _add_col("vod_content",    "last_synced_at",      "TEXT"),
+    _add_col("vod_sync_state", "content_count",       "INTEGER NOT NULL DEFAULT 0"),
+    _add_col("vod_sync_state", "error_message",       "TEXT"),
+    _add_col("vod_sync_state", "last_synced_page",    "INTEGER NOT NULL DEFAULT 0"),
+    _add_col("vod_sync_state", "last_full_sync_at",   "TEXT"),
+]
+
+
+def _migrate(db: sqlite3.Connection) -> None:
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    for i, step in enumerate(MIGRATIONS[version:], start=version + 1):
+        step(db)
+        db.execute(f"PRAGMA user_version = {i}")
+        db.commit()
+
+
+# ---------------------------------------------------------------------------
+
+
 def init_db(path: str) -> sqlite3.Connection:
     if path != ":memory:":
         Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -79,7 +120,7 @@ def init_db(path: str) -> sqlite3.Connection:
             created_at  TEXT NOT NULL
         );
     """)
-    db.commit()
+    _migrate(db)
     return db
 
 
