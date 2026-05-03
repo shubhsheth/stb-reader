@@ -67,7 +67,7 @@ def _build_content_row(item: dict) -> dict:
         "description": item.get("description", ""),
         "rating": str(item.get("rating_imdb", "")),
         "duration": item.get("time"),
-        "is_series": int(bool(item.get("is_series", False))),
+        "is_series": 1 if int(item.get("is_series") or 0) else 0,
         "fav": int(bool(item.get("fav", False))),
         "for_rent": int(bool(item.get("for_rent", False))),
         "lock": int(bool(item.get("lock", False))),
