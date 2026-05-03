@@ -63,6 +63,7 @@ GET /vod/content/{id}/seasons/{sid}/episodes/{eid}/stream   302 redirect to firs
 GET /vod/content/{id}/seasons/{sid}/episodes/{eid}/files    Episode files (multi-quality)
 GET /vod/content/{id}/seasons/{sid}/episodes/{eid}/files/{fid}/stream  302 redirect to file stream
 GET /vod/content/{id}/stream                                302 redirect to movie stream
+GET /vod/content/{id}/screenshot                            302 redirect to poster screenshot URI (404 if none)
 ```
 
 ## Library Endpoints
