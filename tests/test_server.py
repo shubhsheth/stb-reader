@@ -281,18 +281,23 @@ def test_client_proxy(mock_client):
 
 
 def _make_upstream(body: bytes = b"videodata", status: int = 200, headers: dict | None = None):
-    """Build a mock httpx response that supports async streaming."""
+    """Build a mock httpx response that supports async streaming and buffered reads."""
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status
     resp.headers = headers or {"content-type": "video/mp4", "content-length": str(len(body))}
+    resp.url = "http://cdn/stream"
 
     async def _aiter_bytes(chunk_size=65536):
         yield body
+
+    async def _aread():
+        return body
 
     async def _aclose():
         pass
 
     resp.aiter_bytes = _aiter_bytes
+    resp.aread = _aread
     resp.aclose = _aclose
     return resp
 
@@ -369,3 +374,53 @@ class TestProxyMode:
         mock.vod.get_stream_url_by_content_id.side_effect = StreamError("no stream")
         resp = tc.get("/vod/content/1/stream")
         assert resp.status_code == 502
+
+    def test_proxy_rewrites_hls_relative_urls(self, test_client_proxy):
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/path/playlist.m3u8"
+        playlist = (
+            "#EXTM3U\n"
+            "#EXT-X-STREAM-INF:BANDWIDTH=1000000\n"
+            "tracks-v1a1/mono.m3u8?token=abc\n"
+            "#EXT-X-STREAM-INF:BANDWIDTH=500000\n"
+            "tracks-t1/mono.m3u8?token=abc\n"
+        )
+        upstream = _make_upstream(
+            playlist.encode(),
+            status=200,
+            headers={"content-type": "application/vnd.apple.mpegurl"},
+        )
+        upstream.url = "http://cdn/path/playlist.m3u8"
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock(return_value=upstream)
+        mock_httpx_client.aclose = AsyncMock()
+        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+            resp = tc.get("/vod/content/77/stream")
+        assert resp.status_code == 200
+        body = resp.text
+        assert "http://cdn/path/tracks-v1a1/mono.m3u8?token=abc" in body
+        assert "http://cdn/path/tracks-t1/mono.m3u8?token=abc" in body
+        assert "#EXT-X-STREAM-INF" in body
+
+    def test_proxy_leaves_absolute_urls_unchanged(self, test_client_proxy):
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/path/playlist.m3u8"
+        playlist = (
+            "#EXTM3U\n"
+            "#EXT-X-STREAM-INF:BANDWIDTH=1000000\n"
+            "http://other-cdn/tracks-v1a1/mono.m3u8\n"
+        )
+        upstream = _make_upstream(
+            playlist.encode(),
+            status=200,
+            headers={"content-type": "application/vnd.apple.mpegurl"},
+        )
+        upstream.url = "http://cdn/path/playlist.m3u8"
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock(return_value=upstream)
+        mock_httpx_client.aclose = AsyncMock()
+        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+            resp = tc.get("/vod/content/77/stream")
+        assert "http://other-cdn/tracks-v1a1/mono.m3u8" in resp.text

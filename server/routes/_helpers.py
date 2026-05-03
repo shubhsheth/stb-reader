@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from urllib.parse import urljoin
 
 import httpx
 from fastapi import HTTPException, Request, Response
@@ -10,6 +11,24 @@ _FORWARD_REQUEST_HEADERS = {"range", "accept-encoding", "user-agent"}
 _KEEP_RESPONSE_HEADERS = {
     "content-type", "content-length", "content-range", "accept-ranges", "content-encoding"
 }
+_HLS_MIME_TYPES = {"application/vnd.apple.mpegurl", "application/x-mpegurl"}
+
+
+def _is_hls(url: str, content_type: str) -> bool:
+    mime = content_type.split(";")[0].strip().lower()
+    return mime in _HLS_MIME_TYPES or url.split("?")[0].lower().endswith(".m3u8")
+
+
+def _rewrite_m3u8(content: str, base_url: str) -> str:
+    """Rewrite relative URLs in an HLS playlist to absolute URLs using base_url."""
+    out = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            out.append(urljoin(base_url, stripped))
+        else:
+            out.append(line)
+    return "\n".join(out)
 
 
 def stream_redirect(url_fn: Callable, *args, **kwargs) -> RedirectResponse:
@@ -41,6 +60,23 @@ async def stream_response(settings, request: Request, url_fn: Callable, *args, *
     client = httpx.AsyncClient()
     req = client.build_request("GET", url, headers=forward)
     upstream = await client.send(req, stream=True, follow_redirects=True)
+
+    content_type = upstream.headers.get("content-type", "")
+    if _is_hls(str(upstream.url), content_type):
+        body = await upstream.aread()
+        await upstream.aclose()
+        await client.aclose()
+        rewritten = _rewrite_m3u8(body.decode("utf-8", errors="replace"), str(upstream.url))
+        rewritten_bytes = rewritten.encode("utf-8")
+        return Response(
+            content=rewritten_bytes,
+            status_code=upstream.status_code,
+            headers={
+                "content-type": content_type or "application/vnd.apple.mpegurl",
+                "content-length": str(len(rewritten_bytes)),
+            },
+        )
+
     keep = {k: v for k, v in upstream.headers.items() if k.lower() in _KEEP_RESPONSE_HEADERS}
 
     async def cleanup():
