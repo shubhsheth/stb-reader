@@ -51,7 +51,7 @@ async def _proxy_url(url: str, request: Request) -> Response:
     upstream = await client.send(req, stream=True, follow_redirects=True)
 
     content_type = upstream.headers.get("content-type", "")
-    if _is_hls(str(upstream.url), content_type):
+    if upstream.status_code < 400 and _is_hls(str(upstream.url), content_type):
         body = await upstream.aread()
         await upstream.aclose()
         await client.aclose()
