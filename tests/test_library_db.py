@@ -178,6 +178,7 @@ def test_set_sync_state(db):
 def test_init_db_migrates_old_schema():
     """init_db must add new columns to a database created with an older schema."""
     import tempfile, os
+    from server.db import MIGRATIONS
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         path = f.name
     try:
@@ -210,6 +211,17 @@ def test_init_db_migrates_old_schema():
         state = get_sync_state(db)
         assert state["last_synced_page"] == 5
         assert state["last_full_sync_at"] == "2024-01-01T00:00:00+00:00"
+        # Schema version must equal the number of applied migrations
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+        assert version == len(MIGRATIONS)
         db.close()
     finally:
         os.unlink(path)
+
+
+def test_init_db_fresh_schema_has_correct_version():
+    """A brand-new database must have user_version == len(MIGRATIONS)."""
+    from server.db import MIGRATIONS
+    db = init_db(":memory:")
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    assert version == len(MIGRATIONS)
