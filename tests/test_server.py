@@ -469,3 +469,35 @@ class TestProxyMode:
             resp = tc.get("/proxy?url=http://cdn/seg001.ts")
         assert resp.status_code == 200
         assert resp.content == b"segmentdata"
+
+    def test_proxy_rewrites_uri_attributes_in_hls_tags(self, test_client_proxy):
+        # URI= attributes in #EXT-X-MEDIA, #EXT-X-KEY, #EXT-X-MAP must also go through /proxy
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/path/playlist.m3u8"
+        playlist = (
+            '#EXTM3U\n'
+            '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",URI="tracks-t1/mono.m3u8"\n'
+            '#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n'
+            '#EXT-X-MAP:URI="init.mp4"\n'
+            '#EXT-X-STREAM-INF:BANDWIDTH=1000000,AUDIO="audio"\n'
+            'tracks-v1a1/mono.m3u8\n'
+        )
+        upstream = _make_upstream(
+            playlist.encode(),
+            status=200,
+            headers={"content-type": "application/vnd.apple.mpegurl"},
+        )
+        upstream.url = "http://cdn/path/playlist.m3u8"
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock(return_value=upstream)
+        mock_httpx_client.aclose = AsyncMock()
+        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+            resp = tc.get("/vod/content/77/stream")
+        body = resp.text
+        assert resp.status_code == 200
+        # All URI= attributes must point through /proxy (no bare relative or CDN URLs left)
+        assert 'URI="tracks-t1' not in body, "audio URI not rewritten"
+        assert 'URI="key.bin"' not in body, "key URI not rewritten"
+        assert 'URI="init.mp4"' not in body, "map URI not rewritten"
+        assert body.count("/proxy?url=") == 4  # audio URI, key URI, map URI, stream URI

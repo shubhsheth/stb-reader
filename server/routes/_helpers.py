@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from urllib.parse import urljoin, quote
+import re
 
 import httpx
 from fastapi import HTTPException, Request, Response
@@ -12,6 +13,7 @@ _KEEP_RESPONSE_HEADERS = {
     "content-type", "content-length", "content-range", "accept-ranges", "content-encoding"
 }
 _HLS_MIME_TYPES = {"application/vnd.apple.mpegurl", "application/x-mpegurl"}
+_URI_ATTR_RE = re.compile(r'URI="([^"]*)"')
 
 
 def _is_hls(url: str, content_type: str) -> bool:
@@ -20,15 +22,22 @@ def _is_hls(url: str, content_type: str) -> bool:
 
 
 def _rewrite_m3u8(content: str, base_url: str, proxy_base: str) -> str:
-    """Rewrite relative URLs in an HLS playlist to go through the proxy endpoint."""
+    """Rewrite all URLs in an HLS playlist to go through the proxy endpoint.
+
+    Handles both plain URL lines (segments, sub-playlists) and URI= attributes
+    inside tag lines (#EXT-X-MEDIA, #EXT-X-KEY, #EXT-X-MAP, etc.).
+    """
+    def _proxy(uri: str) -> str:
+        return f"{proxy_base}/proxy?url={quote(urljoin(base_url, uri), safe='')}"
+
     out = []
     for line in content.splitlines():
         stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
-            abs_url = urljoin(base_url, stripped)
-            out.append(f"{proxy_base}/proxy?url={quote(abs_url, safe='')}")
-        else:
-            out.append(line)
+        if stripped.startswith("#"):
+            line = _URI_ATTR_RE.sub(lambda m: f'URI="{_proxy(m.group(1))}"', line)
+        elif stripped:
+            line = _proxy(stripped)
+        out.append(line)
     return "\n".join(out)
 
 
