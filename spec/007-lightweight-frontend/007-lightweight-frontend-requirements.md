@@ -25,9 +25,10 @@ The user is a developer or home-lab operator running this locally or over LAN. S
 - **FR-3** Each result has an **Add** button (disabled / hidden when already in library) that calls `POST /library/add/{content_id}` and updates the UI.
 - **FR-4** Each result has a **Remove** button (shown only when in library) that calls `DELETE /library/{content_id}` and updates the UI.
 - **FR-5** A filter control (All / Movies / Series) narrows results via the `is_series` query param.
-- **FR-6** The page shows a loading indicator while a fetch is in progress.
-- **FR-7** Errors from the API (4xx / 5xx) are surfaced inline in the UI (not just console).
-- **FR-8** The frontend is served at `GET /` by the FastAPI app (static file or inline template).
+- **FR-6** Pagination controls (previous / next, current page indicator) allow navigating through results using the `page` query param.
+- **FR-7** The page shows a loading indicator while a fetch is in progress.
+- **FR-8** Errors from the API (4xx / 5xx) are surfaced inline in the UI (not just console).
+- **FR-9** The frontend is served at `GET /` by the FastAPI app (static file or inline template).
 
 ---
 
@@ -43,7 +44,6 @@ The user is a developer or home-lab operator running this locally or over LAN. S
 ## Out of Scope
 
 - Browsing library contents (separate from search results)
-- Pagination controls (first page of results is sufficient for MVP)
 - Authentication / login UI
 - Mobile-responsive design optimisation
 - Thumbnail / poster images
@@ -55,7 +55,7 @@ The user is a developer or home-lab operator running this locally or over LAN. S
 
 - The API runs on the same origin as the frontend (no CORS needed).
 - `in_library` status for search results is derived by cross-referencing `GET /library` once on page load and after each add/remove.
-- The server's `GET /vod/search` returns a `{"items": [...], "total": N}` envelope; each item has `content_id`, `name`, `year`, `genres`, `rating`, `duration`, `is_series`, `in_library` fields.
+- The server's `GET /vod/search` returns a `{"items": [...], "total": N, "page": N, "page_size": N}` envelope; each item has `content_id`, `name`, `year`, `genres`, `rating`, `duration`, `is_series`, `in_library` fields.
 
 ---
 
@@ -127,8 +127,9 @@ No automated tests for the frontend (it's a single static file; the existing pyt
 4. Clicking **Add** calls the library API and the button switches to **Remove** without a page reload.
 5. Clicking **Remove** calls the library API and the button switches to **Add** without a page reload.
 6. Selecting "Movies" or "Series" filter re-runs the search with the appropriate `is_series` param.
-7. An API error (e.g. 503 "not yet synced") displays a readable message in the UI.
-8. `pytest` continues to pass after `main.py` is modified to serve the static file.
+7. Pagination controls appear when total results exceed page size, and navigating pages fetches the correct `page` param.
+8. An API error (e.g. 503 "not yet synced") displays a readable message in the UI.
+9. `pytest` continues to pass after `main.py` is modified to serve the static file.
 
 ---
 
