@@ -1,5 +1,6 @@
 import pytest
-from unittest.mock import MagicMock, patch
+import httpx
+from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 from stb_reader.models import Genre, Channel, Category, Content, Season, Episode, EpisodeFile, PagedResult
 from stb_reader.exceptions import NotFoundError, STBError, StreamError
@@ -14,6 +15,8 @@ ENV_VARS = {
     "STRM_DATA_DIR": "/tmp/strm_test",
     "STRM_SYNC_INTERVAL_HOURS": "0",
 }
+
+ENV_VARS_PROXY = {**ENV_VARS, "STRM_PROXY_STREAMS": "true"}
 
 
 @pytest.fixture
@@ -263,3 +266,106 @@ class TestScreenshot:
         upsert_vod_content(db, {**_VOD_ROW, "screenshot_uri": ""})
         resp = tc.get("/vod/content/c1/screenshot", follow_redirects=False)
         assert resp.status_code == 404
+
+
+@pytest.fixture
+def test_client_proxy(mock_client):
+    import server.main as main_mod
+    from server.db import init_db
+    real_db = init_db(":memory:")
+    with patch.dict("os.environ", ENV_VARS_PROXY):
+        with patch("server.main.STBClient", return_value=mock_client):
+            with patch("server.main.init_db", return_value=real_db):
+                with TestClient(main_mod.app, raise_server_exceptions=False) as tc:
+                    yield tc, mock_client
+
+
+def _make_upstream(body: bytes = b"videodata", status: int = 200, headers: dict | None = None):
+    """Build a mock httpx response that supports async streaming."""
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = status
+    resp.headers = headers or {"content-type": "video/mp4", "content-length": str(len(body))}
+
+    async def _aiter_bytes(chunk_size=65536):
+        yield body
+
+    async def _aclose():
+        pass
+
+    resp.aiter_bytes = _aiter_bytes
+    resp.aclose = _aclose
+    return resp
+
+
+class TestProxyMode:
+    def _patch_httpx(self, url: str, body: bytes = b"videodata", status: int = 200, headers: dict | None = None):
+        upstream = _make_upstream(body, status, headers)
+        mock_client_obj = AsyncMock()
+        mock_client_obj.build_request.return_value = MagicMock()
+        mock_client_obj.send = AsyncMock(return_value=upstream)
+        mock_client_obj.aclose = AsyncMock()
+        return patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_client_obj)
+
+    def test_vod_content_stream_proxies_bytes(self, test_client_proxy):
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/movie.mp4"
+        with self._patch_httpx("http://cdn/movie.mp4"):
+            resp = tc.get("/vod/content/77/stream")
+        assert resp.status_code == 200
+        assert resp.content == b"videodata"
+        assert resp.headers["content-type"] == "video/mp4"
+
+    def test_vod_episode_stream_proxies_bytes(self, test_client_proxy):
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_first_file.return_value = "http://cdn/ep.mp4"
+        with self._patch_httpx("http://cdn/ep.mp4"):
+            resp = tc.get("/vod/content/10/seasons/1/episodes/55/stream")
+        assert resp.status_code == 200
+        assert resp.content == b"videodata"
+
+    def test_vod_episode_file_stream_proxies_bytes(self, test_client_proxy):
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_file_id.return_value = "http://cdn/file.mp4"
+        with self._patch_httpx("http://cdn/file.mp4"):
+            resp = tc.get("/vod/content/10/seasons/1/episodes/55/files/1/stream")
+        assert resp.status_code == 200
+        assert resp.content == b"videodata"
+
+    def test_live_tv_channel_stream_proxies_bytes(self, test_client_proxy):
+        tc, mock = test_client_proxy
+        mock.live_tv.get_stream_url_by_id.return_value = "http://cdn/live.ts"
+        with self._patch_httpx("http://cdn/live.ts"):
+            resp = tc.get("/live-tv/channels/42/stream")
+        assert resp.status_code == 200
+        assert resp.content == b"videodata"
+
+    def test_proxy_forwards_range_header(self, test_client_proxy):
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/movie.mp4"
+        upstream = _make_upstream(b"partial", status=206, headers={
+            "content-type": "video/mp4",
+            "content-range": "bytes 0-5/100",
+            "content-length": "6",
+        })
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock(return_value=upstream)
+        mock_httpx_client.aclose = AsyncMock()
+        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+            resp = tc.get("/vod/content/77/stream", headers={"Range": "bytes=0-5"})
+        assert resp.status_code == 206
+        assert resp.headers["content-range"] == "bytes 0-5/100"
+        forwarded_headers = mock_httpx_client.build_request.call_args[1]["headers"]
+        assert "range" in {k.lower() for k in forwarded_headers}
+
+    def test_proxy_404_on_not_found(self, test_client_proxy):
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.side_effect = NotFoundError("not found")
+        resp = tc.get("/vod/content/999/stream")
+        assert resp.status_code == 404
+
+    def test_proxy_502_on_stream_error(self, test_client_proxy):
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.side_effect = StreamError("no stream")
+        resp = tc.get("/vod/content/1/stream")
+        assert resp.status_code == 502

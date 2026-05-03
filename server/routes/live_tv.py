@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request
-from ._helpers import paged_response, stream_redirect
+from ._helpers import paged_response, stream_response
 
 router = APIRouter(prefix="/live-tv", tags=["live-tv"])
 
@@ -25,5 +25,10 @@ def get_channels(
 
 
 @router.get("/channels/{channel_id}/stream")
-def get_channel_stream(channel_id: str, request: Request):
-    return stream_redirect(request.app.state.client.live_tv.get_stream_url_by_id, channel_id)
+async def get_channel_stream(channel_id: str, request: Request):
+    return await stream_response(
+        request.app.state.settings,
+        request,
+        request.app.state.client.live_tv.get_stream_url_by_id,
+        channel_id,
+    )
