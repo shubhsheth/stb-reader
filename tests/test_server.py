@@ -244,6 +244,14 @@ class TestScreenshot:
         assert resp.status_code == 302
         assert resp.headers["location"] == "http://portal.test/stalker_portal/screenshots/c1.jpg"
 
+    def test_redirects_absolute_screenshot_uri_unchanged(self, test_client):
+        tc, _ = test_client
+        db = tc.app.state.db
+        upsert_vod_content(db, {**_VOD_ROW, "screenshot_uri": "http://cdn.example.com/img/c1.jpg"})
+        resp = tc.get("/vod/content/c1/screenshot", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "http://cdn.example.com/img/c1.jpg"
+
     def test_404_when_content_not_found(self, test_client):
         tc, _ = test_client
         resp = tc.get("/vod/content/nonexistent/screenshot", follow_redirects=False)
