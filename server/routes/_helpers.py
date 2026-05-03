@@ -33,9 +33,12 @@ def _rewrite_m3u8(content: str, base_url: str, proxy_base: str) -> str:
 
 
 async def _proxy_url(url: str, request: Request) -> Response:
-    forward = {k: v for k, v in request.headers.items() if k.lower() in _FORWARD_REQUEST_HEADERS}
+    # Fetch without Range first — a Range header causes CDNs to return 206 partial
+    # content for playlists, which truncates the m3u8 before we can rewrite it.
+    forward_no_range = {k: v for k, v in request.headers.items()
+                        if k.lower() in _FORWARD_REQUEST_HEADERS and k.lower() != "range"}
     client = httpx.AsyncClient()
-    req = client.build_request("GET", url, headers=forward)
+    req = client.build_request("GET", url, headers=forward_no_range)
     upstream = await client.send(req, stream=True, follow_redirects=True)
 
     content_type = upstream.headers.get("content-type", "")
@@ -48,12 +51,21 @@ async def _proxy_url(url: str, request: Request) -> Response:
         rewritten_bytes = rewritten.encode("utf-8")
         return Response(
             content=rewritten_bytes,
-            status_code=upstream.status_code,
+            status_code=200,
             headers={
                 "content-type": content_type or "application/vnd.apple.mpegurl",
                 "content-length": str(len(rewritten_bytes)),
             },
         )
+
+    # Not HLS — if the client sent a Range header, re-fetch with it so seeking works.
+    if "range" in {k.lower() for k in request.headers}:
+        await upstream.aclose()
+        await client.aclose()
+        client = httpx.AsyncClient()
+        forward = {k: v for k, v in request.headers.items() if k.lower() in _FORWARD_REQUEST_HEADERS}
+        req = client.build_request("GET", url, headers=forward)
+        upstream = await client.send(req, stream=True, follow_redirects=True)
 
     keep = {k: v for k, v in upstream.headers.items() if k.lower() in _KEEP_RESPONSE_HEADERS}
 

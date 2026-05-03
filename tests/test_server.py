@@ -344,7 +344,9 @@ class TestProxyMode:
         assert resp.status_code == 200
         assert resp.content == b"videodata"
 
-    def test_proxy_forwards_range_header(self, test_client_proxy):
+    def test_proxy_forwards_range_header_for_non_hls(self, test_client_proxy):
+        # For non-HLS content, Range is forwarded on a second request so seeking works.
+        # The first request (no Range) detects content type; the second carries the Range.
         tc, mock = test_client_proxy
         mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/movie.mp4"
         upstream = _make_upstream(b"partial", status=206, headers={
@@ -360,8 +362,35 @@ class TestProxyMode:
             resp = tc.get("/vod/content/77/stream", headers={"Range": "bytes=0-5"})
         assert resp.status_code == 206
         assert resp.headers["content-range"] == "bytes 0-5/100"
-        forwarded_headers = mock_httpx_client.build_request.call_args[1]["headers"]
-        assert "range" in {k.lower() for k in forwarded_headers}
+        # build_request is called twice: first without Range, then with Range
+        all_calls = mock_httpx_client.build_request.call_args_list
+        assert len(all_calls) == 2
+        first_headers = {k.lower() for k in all_calls[0][1]["headers"]}
+        second_headers = {k.lower() for k in all_calls[1][1]["headers"]}
+        assert "range" not in first_headers
+        assert "range" in second_headers
+
+    def test_hls_playlist_served_as_200_even_when_cdn_returns_206(self, test_client_proxy):
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/path/playlist.m3u8"
+        playlist = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000\ntracks-v1a1/mono.m3u8\n"
+        upstream = _make_upstream(
+            playlist.encode(),
+            status=206,  # CDN returned partial — we must still serve complete 200
+            headers={"content-type": "application/vnd.apple.mpegurl"},
+        )
+        upstream.url = "http://cdn/path/playlist.m3u8"
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock(return_value=upstream)
+        mock_httpx_client.aclose = AsyncMock()
+        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+            resp = tc.get("/vod/content/77/stream", headers={"Range": "bytes=0-100"})
+        assert resp.status_code == 200
+        assert "/proxy?url=" in resp.text
+        # Range must NOT have been sent to the CDN for the playlist fetch
+        first_headers = {k.lower() for k in mock_httpx_client.build_request.call_args[1]["headers"]}
+        assert "range" not in first_headers
 
     def test_proxy_404_on_not_found(self, test_client_proxy):
         tc, mock = test_client_proxy
