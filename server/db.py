@@ -68,7 +68,26 @@ def init_db(path: str) -> sqlite3.Connection:
         );
 
         INSERT OR IGNORE INTO vod_sync_state (id) VALUES (1);
+    """)
 
+    # Idempotent column migrations for schemas created before later commits.
+    _col_migrations = [
+        ("vod_content",    "content_hash",  "TEXT"),
+        ("vod_content",    "in_library",    "INTEGER NOT NULL DEFAULT 0"),
+        ("vod_content",    "added_at",      "TEXT"),
+        ("vod_content",    "last_synced_at","TEXT"),
+        ("vod_sync_state", "content_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("vod_sync_state", "error_message", "TEXT"),
+        ("vod_sync_state", "last_synced_page", "INTEGER NOT NULL DEFAULT 0"),
+        ("vod_sync_state", "last_full_sync_at", "TEXT"),
+    ]
+    for table, col, defn in _col_migrations:
+        try:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {defn}")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+
+    db.executescript("""
         CREATE TABLE IF NOT EXISTS strm_files (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             content_id  TEXT NOT NULL REFERENCES vod_content(content_id),
