@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from stb_reader import STBClient
 
@@ -76,6 +77,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="STB Reader", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "HEAD", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")

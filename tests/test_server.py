@@ -514,3 +514,39 @@ class TestProxyMode:
         assert 'URI="key.bin"' not in body, "key URI not rewritten"
         assert 'URI="init.mp4"' not in body, "map URI not rewritten"
         assert body.count("/proxy?url=") == 4  # audio URI, key URI, map URI, stream URI
+
+
+class TestCORS:
+    def test_cors_header_on_proxy_endpoint(self, test_client_proxy):
+        tc, _ = test_client_proxy
+        upstream = _make_upstream(b"seg", status=200, headers={"content-type": "video/mp2t"})
+        upstream.url = "http://cdn/seg.ts"
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock(return_value=upstream)
+        mock_httpx_client.aclose = AsyncMock()
+        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+            resp = tc.get("/proxy?url=http://cdn/seg.ts", headers={"Origin": "http://player.example.com"})
+        assert resp.headers.get("access-control-allow-origin") == "*"
+
+    def test_cors_header_on_stream_endpoint(self, test_client_proxy):
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/movie.mp4"
+        with patch("server.routes._helpers.httpx.AsyncClient") as mock_cls:
+            upstream = _make_upstream()
+            mock_instance = AsyncMock()
+            mock_instance.build_request.return_value = MagicMock()
+            mock_instance.send = AsyncMock(return_value=upstream)
+            mock_instance.aclose = AsyncMock()
+            mock_cls.return_value = mock_instance
+            resp = tc.get("/vod/content/77/stream", headers={"Origin": "http://player.example.com"})
+        assert resp.headers.get("access-control-allow-origin") == "*"
+
+    def test_cors_preflight_options(self, test_client):
+        tc, _ = test_client
+        resp = tc.options(
+            "/proxy?url=http://cdn/seg.ts",
+            headers={"Origin": "http://player.example.com", "Access-Control-Request-Method": "GET"},
+        )
+        assert resp.status_code in (200, 204)
+        assert resp.headers.get("access-control-allow-origin") == "*"
