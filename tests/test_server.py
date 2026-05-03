@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 from stb_reader.models import Genre, Channel, Category, Content, Season, Episode, EpisodeFile, PagedResult
 from stb_reader.exceptions import NotFoundError, STBError, StreamError
+from server.db import upsert_vod_content
 
 
 ENV_VARS = {
@@ -213,3 +214,52 @@ class TestVOD:
         mock.vod.get_stream_url_by_file_id.side_effect = StreamError("nothing_to_play")
         resp = tc.get("/vod/content/10/seasons/1/episodes/55/files/1/stream", follow_redirects=False)
         assert resp.status_code == 502
+
+
+_VOD_ROW = {
+    "content_id": "c1",
+    "name": "Test Movie",
+    "cmd": "/media/c1.mpg",
+    "screenshot_uri": "/stalker_portal/screenshots/c1.jpg",
+    "genres": "Action",
+    "year": "2023",
+    "description": "A film",
+    "rating": "8.0",
+    "duration": 90,
+    "is_series": 0,
+    "fav": 0,
+    "for_rent": 0,
+    "lock": 0,
+    "portal_raw": "{}",
+    "synced_at": "2024-01-01T00:00:00+00:00",
+}
+
+
+class TestScreenshot:
+    def test_redirects_to_screenshot_uri(self, test_client):
+        tc, _ = test_client
+        db = tc.app.state.db
+        upsert_vod_content(db, _VOD_ROW)
+        resp = tc.get("/vod/content/c1/screenshot", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "http://portal.test/stalker_portal/screenshots/c1.jpg"
+
+    def test_redirects_absolute_screenshot_uri_unchanged(self, test_client):
+        tc, _ = test_client
+        db = tc.app.state.db
+        upsert_vod_content(db, {**_VOD_ROW, "screenshot_uri": "http://cdn.example.com/img/c1.jpg"})
+        resp = tc.get("/vod/content/c1/screenshot", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "http://cdn.example.com/img/c1.jpg"
+
+    def test_404_when_content_not_found(self, test_client):
+        tc, _ = test_client
+        resp = tc.get("/vod/content/nonexistent/screenshot", follow_redirects=False)
+        assert resp.status_code == 404
+
+    def test_404_when_screenshot_uri_empty(self, test_client):
+        tc, _ = test_client
+        db = tc.app.state.db
+        upsert_vod_content(db, {**_VOD_ROW, "screenshot_uri": ""})
+        resp = tc.get("/vod/content/c1/screenshot", follow_redirects=False)
+        assert resp.status_code == 404

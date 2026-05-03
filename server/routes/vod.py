@@ -1,9 +1,9 @@
 import asyncio
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
-from ..db import count_vod_content, get_sync_state, search_vod_content
+from ..db import count_vod_content, get_sync_state, get_vod_content, search_vod_content
 from ..vod_sync import run_portal_sync
 from ._helpers import paged_response, stream_redirect
 
@@ -60,6 +60,18 @@ def get_episode_file_stream(
         request.app.state.client.vod.get_stream_url_by_file_id,
         content_id, season_id, episode_id, file_id,
     )
+
+
+@router.get("/content/{content_id}/screenshot")
+def get_content_screenshot(content_id: str, request: Request):
+    row = get_vod_content(request.app.state.db, content_id)
+    if not row or not row.get("screenshot_uri"):
+        raise HTTPException(status_code=404, detail="No screenshot available")
+    uri = row["screenshot_uri"]
+    if not uri.startswith("http"):
+        portal_url = request.app.state.settings.stb_portal_url.rstrip("/")
+        uri = f"{portal_url}/{uri.lstrip('/')}"
+    return RedirectResponse(url=uri, status_code=302)
 
 
 @router.get("/content/{content_id}/stream")

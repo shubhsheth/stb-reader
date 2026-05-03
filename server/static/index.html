@@ -153,6 +153,8 @@
     .badge-series { background: #1e3a5f; color: #7ab8f5; }
     .badge-movie  { background: #1e3a22; color: #7ae07a; }
 
+    .poster img { width: 56px; height: auto; border-radius: 2px; vertical-align: middle; }
+
     .btn-add    { background: #1a4a1a; color: #7ae07a; }
     .btn-add:hover:not(:disabled)    { background: #225522; }
     .btn-remove { background: #4a1a1a; color: #e07a7a; }
@@ -297,6 +299,7 @@
       const dur = item.duration ? `${Math.round(item.duration / 60)}m` : '';
 
       return `<tr data-id="${item.content_id}">
+        <td class="poster"><img src="/vod/content/${item.content_id}/screenshot" alt="" onerror="this.style.display='none'"></td>
         <td class="title">${esc(item.name)}</td>
         <td>${badge}</td>
         <td>${esc(year)}</td>
@@ -311,7 +314,7 @@
       <table>
         <thead>
           <tr>
-            <th>Title</th><th>Type</th><th>Year</th><th>Genres</th>
+            <th></th><th>Title</th><th>Type</th><th>Year</th><th>Genres</th>
             <th>Rating</th><th>Duration</th><th></th>
           </tr>
         </thead>
