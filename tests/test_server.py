@@ -370,6 +370,19 @@ class TestProxyMode:
         assert "range" not in first_headers
         assert "range" in second_headers
 
+    def test_lavf_user_agent_gets_redirect_even_in_proxy_mode(self, test_client_proxy):
+        # FFmpeg/ffprobe (Lavf UA) must always get a redirect so it can probe the CDN
+        # stream directly. Running ffprobe through our proxy chain breaks deep analysis.
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/movie.mp4"
+        resp = tc.get(
+            "/vod/content/77/stream",
+            headers={"User-Agent": "Lavf/61.7.100"},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "http://cdn/movie.mp4"
+
     def test_hls_playlist_served_as_200_even_when_cdn_returns_206(self, test_client_proxy):
         tc, mock = test_client_proxy
         mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/path/playlist.m3u8"

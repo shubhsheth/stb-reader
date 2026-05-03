@@ -112,7 +112,11 @@ async def stream_response(settings, request: Request, url_fn: Callable, *args, *
     except STBError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
-    if not settings.strm_proxy_streams:
+    # FFmpeg/ffprobe identifies itself as "Lavf/X.X.X" (libavformat). These clients
+    # follow redirects natively and probe HLS directly from the CDN without issues.
+    # Sending them through the proxy chain breaks ffprobe's deep stream analysis.
+    ua = request.headers.get("user-agent", "")
+    if not settings.strm_proxy_streams or ua.startswith("Lavf/"):
         return RedirectResponse(url=url, status_code=302)
 
     return await _proxy_url(url, request)
