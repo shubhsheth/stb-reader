@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from urllib.parse import urljoin
+from urllib.parse import urljoin, quote
 
 import httpx
 from fastapi import HTTPException, Request, Response
@@ -19,16 +19,54 @@ def _is_hls(url: str, content_type: str) -> bool:
     return mime in _HLS_MIME_TYPES or url.split("?")[0].lower().endswith(".m3u8")
 
 
-def _rewrite_m3u8(content: str, base_url: str) -> str:
-    """Rewrite relative URLs in an HLS playlist to absolute URLs using base_url."""
+def _rewrite_m3u8(content: str, base_url: str, proxy_base: str) -> str:
+    """Rewrite relative URLs in an HLS playlist to go through the proxy endpoint."""
     out = []
     for line in content.splitlines():
         stripped = line.strip()
         if stripped and not stripped.startswith("#"):
-            out.append(urljoin(base_url, stripped))
+            abs_url = urljoin(base_url, stripped)
+            out.append(f"{proxy_base}/proxy?url={quote(abs_url, safe='')}")
         else:
             out.append(line)
     return "\n".join(out)
+
+
+async def _proxy_url(url: str, request: Request) -> Response:
+    forward = {k: v for k, v in request.headers.items() if k.lower() in _FORWARD_REQUEST_HEADERS}
+    client = httpx.AsyncClient()
+    req = client.build_request("GET", url, headers=forward)
+    upstream = await client.send(req, stream=True, follow_redirects=True)
+
+    content_type = upstream.headers.get("content-type", "")
+    if _is_hls(str(upstream.url), content_type):
+        body = await upstream.aread()
+        await upstream.aclose()
+        await client.aclose()
+        proxy_base = str(request.base_url).rstrip("/")
+        rewritten = _rewrite_m3u8(body.decode("utf-8", errors="replace"), str(upstream.url), proxy_base)
+        rewritten_bytes = rewritten.encode("utf-8")
+        return Response(
+            content=rewritten_bytes,
+            status_code=upstream.status_code,
+            headers={
+                "content-type": content_type or "application/vnd.apple.mpegurl",
+                "content-length": str(len(rewritten_bytes)),
+            },
+        )
+
+    keep = {k: v for k, v in upstream.headers.items() if k.lower() in _KEEP_RESPONSE_HEADERS}
+
+    async def cleanup():
+        await upstream.aclose()
+        await client.aclose()
+
+    return StreamingResponse(
+        upstream.aiter_bytes(chunk_size=65536),
+        status_code=upstream.status_code,
+        headers=keep,
+        background=BackgroundTask(cleanup),
+    )
 
 
 def stream_redirect(url_fn: Callable, *args, **kwargs) -> RedirectResponse:
@@ -56,39 +94,7 @@ async def stream_response(settings, request: Request, url_fn: Callable, *args, *
     if not settings.strm_proxy_streams:
         return RedirectResponse(url=url, status_code=302)
 
-    forward = {k: v for k, v in request.headers.items() if k.lower() in _FORWARD_REQUEST_HEADERS}
-    client = httpx.AsyncClient()
-    req = client.build_request("GET", url, headers=forward)
-    upstream = await client.send(req, stream=True, follow_redirects=True)
-
-    content_type = upstream.headers.get("content-type", "")
-    if _is_hls(str(upstream.url), content_type):
-        body = await upstream.aread()
-        await upstream.aclose()
-        await client.aclose()
-        rewritten = _rewrite_m3u8(body.decode("utf-8", errors="replace"), str(upstream.url))
-        rewritten_bytes = rewritten.encode("utf-8")
-        return Response(
-            content=rewritten_bytes,
-            status_code=upstream.status_code,
-            headers={
-                "content-type": content_type or "application/vnd.apple.mpegurl",
-                "content-length": str(len(rewritten_bytes)),
-            },
-        )
-
-    keep = {k: v for k, v in upstream.headers.items() if k.lower() in _KEEP_RESPONSE_HEADERS}
-
-    async def cleanup():
-        await upstream.aclose()
-        await client.aclose()
-
-    return StreamingResponse(
-        upstream.aiter_bytes(chunk_size=65536),
-        status_code=upstream.status_code,
-        headers=keep,
-        background=BackgroundTask(cleanup),
-    )
+    return await _proxy_url(url, request)
 
 
 def paged_response(result) -> dict:

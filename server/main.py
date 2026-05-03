@@ -38,9 +38,11 @@ async def lifespan(app: FastAPI):
     from .routes.live_tv import router as live_tv_router
     from .routes.vod import router as vod_router
     from .routes.library import router as library_router
+    from .routes.proxy import router as proxy_router
     app.include_router(live_tv_router)
     app.include_router(vod_router)
     app.include_router(library_router)
+    app.include_router(proxy_router)
     app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")
 
     tasks = []

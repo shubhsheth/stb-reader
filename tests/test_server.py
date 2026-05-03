@@ -375,7 +375,7 @@ class TestProxyMode:
         resp = tc.get("/vod/content/1/stream")
         assert resp.status_code == 502
 
-    def test_proxy_rewrites_hls_relative_urls(self, test_client_proxy):
+    def test_proxy_rewrites_hls_urls_through_proxy_endpoint(self, test_client_proxy):
         tc, mock = test_client_proxy
         mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/path/playlist.m3u8"
         playlist = (
@@ -399,11 +399,13 @@ class TestProxyMode:
             resp = tc.get("/vod/content/77/stream")
         assert resp.status_code == 200
         body = resp.text
-        assert "http://cdn/path/tracks-v1a1/mono.m3u8?token=abc" in body
-        assert "http://cdn/path/tracks-t1/mono.m3u8?token=abc" in body
+        # URLs must go through /proxy so all CDN requests originate from the server
+        assert "/proxy?url=" in body
+        assert "cdn%2Fpath%2Ftracks-v1a1" in body
+        assert "cdn%2Fpath%2Ftracks-t1" in body
         assert "#EXT-X-STREAM-INF" in body
 
-    def test_proxy_leaves_absolute_urls_unchanged(self, test_client_proxy):
+    def test_proxy_rewrites_absolute_urls_through_proxy_endpoint(self, test_client_proxy):
         tc, mock = test_client_proxy
         mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/path/playlist.m3u8"
         playlist = (
@@ -423,4 +425,18 @@ class TestProxyMode:
         mock_httpx_client.aclose = AsyncMock()
         with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
             resp = tc.get("/vod/content/77/stream")
-        assert "http://other-cdn/tracks-v1a1/mono.m3u8" in resp.text
+        assert "/proxy?url=" in resp.text
+        assert "other-cdn" in resp.text
+
+    def test_proxy_endpoint_streams_non_hls(self, test_client_proxy):
+        tc, _ = test_client_proxy
+        upstream = _make_upstream(b"segmentdata", status=200, headers={"content-type": "video/mp2t"})
+        upstream.url = "http://cdn/seg001.ts"
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock(return_value=upstream)
+        mock_httpx_client.aclose = AsyncMock()
+        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+            resp = tc.get("/proxy?url=http://cdn/seg001.ts")
+        assert resp.status_code == 200
+        assert resp.content == b"segmentdata"
