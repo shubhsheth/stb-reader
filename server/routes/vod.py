@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from ..db import count_vod_content, get_sync_state, get_vod_content, search_vod_content
 from ..vod_sync import run_portal_sync
-from ._helpers import paged_response, stream_redirect
+from ._helpers import paged_response, stream_response
 
 router = APIRouter(prefix="/vod", tags=["vod"])
 
@@ -45,18 +45,22 @@ def get_episode_files(content_id: str, season_id: str, episode_id: str, request:
 
 
 @router.get("/content/{content_id}/seasons/{season_id}/episodes/{episode_id}/stream")
-def get_episode_stream(content_id: str, season_id: str, episode_id: str, request: Request):
-    return stream_redirect(
+async def get_episode_stream(content_id: str, season_id: str, episode_id: str, request: Request):
+    return await stream_response(
+        request.app.state.settings,
+        request,
         request.app.state.client.vod.get_stream_url_by_first_file,
         content_id, season_id, episode_id,
     )
 
 
 @router.get("/content/{content_id}/seasons/{season_id}/episodes/{episode_id}/files/{file_id}/stream")
-def get_episode_file_stream(
+async def get_episode_file_stream(
     content_id: str, season_id: str, episode_id: str, file_id: str, request: Request
 ):
-    return stream_redirect(
+    return await stream_response(
+        request.app.state.settings,
+        request,
         request.app.state.client.vod.get_stream_url_by_file_id,
         content_id, season_id, episode_id, file_id,
     )
@@ -75,8 +79,13 @@ def get_content_screenshot(content_id: str, request: Request):
 
 
 @router.get("/content/{content_id}/stream")
-def get_content_stream(content_id: str, request: Request):
-    return stream_redirect(request.app.state.client.vod.get_stream_url_by_content_id, content_id)
+async def get_content_stream(content_id: str, request: Request):
+    return await stream_response(
+        request.app.state.settings,
+        request,
+        request.app.state.client.vod.get_stream_url_by_content_id,
+        content_id,
+    )
 
 
 @router.post("/sync", status_code=202)
