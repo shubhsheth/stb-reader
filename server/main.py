@@ -50,6 +50,8 @@ async def lifespan(app: FastAPI):
             settings.strm_output_dir,
             settings.vod_sync_request_delay_ms,
             settings.vod_sync_max_pages,
+            settings.vod_sync_early_stop_pages,
+            settings.vod_sync_full_sync_days,
         )
 
     if count_vod_content(db) == 0:

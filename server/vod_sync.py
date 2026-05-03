@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import sqlite3
@@ -12,6 +13,7 @@ from stb_reader.exceptions import AuthError, STBError
 from .db import (
     count_vod_content,
     delete_vod_content_rows,
+    get_content_hashes,
     get_sync_state,
     get_vod_content,
     remove_from_library,
@@ -35,6 +37,11 @@ def _content_changed(old: dict, new_name: str, new_year: str) -> bool:
     )
 
 
+def _content_hash(row: dict) -> str:
+    key = f"{row['name']}|{row['year']}|{row['cmd']}|{row['genres']}|{row['rating']}|{row['is_series']}"
+    return hashlib.md5(key.encode()).hexdigest()
+
+
 def _delete_strm_files(paths: list[str]) -> None:
     for p in paths:
         path = Path(p)
@@ -50,7 +57,7 @@ def _build_content_row(item: dict) -> dict:
     genres = item.get("genres_str", item.get("genres", ""))
     if isinstance(genres, list):
         genres = json.dumps(genres)
-    return {
+    row = {
         "content_id": str(item["id"]),
         "name": item.get("name", ""),
         "cmd": item.get("cmd", ""),
@@ -67,6 +74,8 @@ def _build_content_row(item: dict) -> dict:
         "portal_raw": json.dumps(item),
         "synced_at": datetime.now(timezone.utc).isoformat(),
     }
+    row["content_hash"] = _content_hash(row)
+    return row
 
 
 def run_portal_sync(
@@ -76,12 +85,15 @@ def run_portal_sync(
     output_dir: str,
     delay_ms: int,
     max_pages: int,
+    early_stop_pages: int = 3,
+    full_sync_days: int = 7,
 ) -> None:
     """Walk the portal and populate vod_content. Blocking — run via asyncio.to_thread."""
     t0 = time.monotonic()
     log.info("vod_sync.started", extra={"max_pages": max_pages, "delay_ms": delay_ms})
 
     with lock:
+        prev_state = get_sync_state(db)
         set_sync_state(
             db,
             last_sync_status="running",
@@ -91,7 +103,7 @@ def run_portal_sync(
         )
 
     try:
-        _run_sync(db, lock, vod, output_dir, delay_ms, max_pages, t0)
+        _run_sync(db, lock, vod, output_dir, delay_ms, max_pages, t0, early_stop_pages, full_sync_days, prev_state)
     except AuthError as exc:
         log.error("vod_sync.auth_failed", extra={"error": str(exc)})
         with lock:
@@ -112,9 +124,38 @@ def _run_sync(
     delay_ms: int,
     max_pages: int,
     t0: float,
+    early_stop_pages: int,
+    full_sync_days: int,
+    prev_state: dict,
 ) -> None:
     delay_s = delay_ms / 1000.0
     seen_ids: set[str] = set()
+
+    # --- Determine effective early-stop threshold ---
+    # Force a full sync periodically to catch deleted content.
+    effective_early_stop = early_stop_pages
+    if full_sync_days > 0:
+        last_full = prev_state.get("last_full_sync_at")
+        if last_full is None:
+            effective_early_stop = 0
+            log.info("vod_sync.full_sync_forced", extra={"reason": "no_previous_full_sync"})
+        else:
+            last_full_dt = datetime.fromisoformat(last_full)
+            age_days = (datetime.now(timezone.utc) - last_full_dt).days
+            if age_days >= full_sync_days:
+                effective_early_stop = 0
+                log.info("vod_sync.full_sync_forced", extra={"reason": "scheduled", "age_days": age_days})
+
+    # --- Determine resume page ---
+    prev_status = prev_state.get("last_sync_status", "idle")
+    prev_page = prev_state.get("last_synced_page", 0) or 0
+    if prev_status in ("running", "failed") and prev_page > 0:
+        start_page = prev_page + 1
+        log.info("vod_sync.resuming", extra={"from_page": start_page})
+    else:
+        start_page = 1
+        with lock:
+            set_sync_state(db, last_synced_page=0)
 
     # --- Phase 1: fetch categories ---
     categories = vod.get_categories()
@@ -125,8 +166,10 @@ def _run_sync(
     log.info("vod_sync.categories_fetched", extra={"count": len(categories)})
 
     # --- Phase 2: fetch all content via category="*" ---
-    page = 1
+    page = start_page
     total_pages = None
+    consecutive_stable_pages = 0
+    early_stopped = False
 
     while True:
         if delay_s > 0:
@@ -155,7 +198,12 @@ def _run_sync(
             row = _build_content_row(vars(item) if hasattr(item, "__dict__") else item)
             rows_to_upsert.append((row, row["name"], row["year"]))
 
+        incoming_ids = [row["content_id"] for row, _, _ in rows_to_upsert]
+        incoming_hashes = {row["content_id"]: row["content_hash"] for row, _, _ in rows_to_upsert}
+
         with lock:
+            # Snapshot stored hashes before upserting so early-stop compares old vs new
+            pre_upsert_hashes = get_content_hashes(db, incoming_ids)
             for row, new_name, new_year in rows_to_upsert:
                 existing = get_vod_content(db, row["content_id"])
                 if existing and existing["in_library"] and _content_changed(existing, new_name, new_year):
@@ -171,10 +219,29 @@ def _run_sync(
                     _delete_strm_files(paths)
                 upsert_vod_content(db, row)
                 page_ids.append(row["content_id"])
+            set_sync_state(db, last_synced_page=page)
             db.commit()
 
         seen_ids.update(page_ids)
         log.info("vod_sync.page", extra={"page": page, "page_count": len(page_ids), "cumulative": len(seen_ids)})
+
+        # --- Early-stop check ---
+        if effective_early_stop > 0 and page_ids:
+            page_stable = all(
+                pre_upsert_hashes.get(cid) == incoming_hashes[cid]
+                for cid in page_ids
+            )
+            if page_stable:
+                consecutive_stable_pages += 1
+                if consecutive_stable_pages >= effective_early_stop:
+                    early_stopped = True
+                    log.info(
+                        "vod_sync.early_stop",
+                        extra={"page": page, "stable_pages": consecutive_stable_pages},
+                    )
+                    break
+            else:
+                consecutive_stable_pages = 0
 
         if max_pages > 0 and page >= max_pages:
             break
@@ -183,7 +250,7 @@ def _run_sync(
         page += 1
 
     # --- Phase 3: category associations (full sync only) ---
-    if max_pages == 0:
+    if max_pages == 0 and not early_stopped:
         for cat in categories:
             cat_page = 1
             cat_total_pages = None
@@ -235,12 +302,17 @@ def _run_sync(
 
     elapsed = time.monotonic() - t0
     content_count = len(seen_ids)
+
+    finish_kwargs: dict = {
+        "last_sync_status": "success",
+        "last_sync_finished_at": datetime.now(timezone.utc).isoformat(),
+        "content_count": content_count,
+        "error_message": None,
+        "last_synced_page": 0,
+    }
+    if max_pages == 0 and not early_stopped:
+        finish_kwargs["last_full_sync_at"] = datetime.now(timezone.utc).isoformat()
+
     with lock:
-        set_sync_state(
-            db,
-            last_sync_status="success",
-            last_sync_finished_at=datetime.now(timezone.utc).isoformat(),
-            content_count=content_count,
-            error_message=None,
-        )
+        set_sync_state(db, **finish_kwargs)
     log.info("vod_sync.finished", extra={"count": content_count, "duration_s": round(elapsed, 2)})

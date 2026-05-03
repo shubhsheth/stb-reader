@@ -19,3 +19,5 @@ class Settings(BaseSettings):
     vod_sync_interval_hours: int = 24
     vod_sync_request_delay_ms: int = 250
     vod_sync_max_pages: int = 0
+    vod_sync_early_stop_pages: int = 3
+    vod_sync_full_sync_days: int = 7
