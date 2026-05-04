@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from urllib.parse import urljoin, quote
+from urllib.parse import urljoin, quote, urlparse
 import logging
 import re
 
@@ -70,7 +70,12 @@ async def _proxy_url(url: str, request: Request) -> Response:
         logger.info("proxy fetch: %s", url)
         client = httpx.AsyncClient(timeout=_CDN_TIMEOUT)
         req = client.build_request("GET", url, headers=headers)
-        upstream = await client.send(req, stream=True, follow_redirects=True)
+        try:
+            upstream = await client.send(req, stream=True, follow_redirects=True)
+        except httpx.HTTPError as exc:
+            await client.aclose()
+            logger.warning("proxy CDN error for %s: %s", url, exc)
+            raise HTTPException(status_code=502, detail=f"CDN error: {exc}")
 
         content_type = upstream.headers.get("content-type", "")
         logger.info("proxy upstream %s status=%d ct=%s", url, upstream.status_code, content_type)
@@ -125,7 +130,12 @@ async def _proxy_url(url: str, request: Request) -> Response:
     logger.info("proxy fetch (range): %s", url)
     client = httpx.AsyncClient(timeout=_CDN_TIMEOUT)
     req = client.build_request("GET", url, headers=headers)
-    upstream = await client.send(req, stream=True, follow_redirects=True)
+    try:
+        upstream = await client.send(req, stream=True, follow_redirects=True)
+    except httpx.HTTPError as exc:
+        await client.aclose()
+        logger.warning("proxy CDN error for %s: %s", url, exc)
+        raise HTTPException(status_code=502, detail=f"CDN error: {exc}")
     content_type = upstream.headers.get("content-type", "")
     logger.info("proxy upstream %s status=%d ct=%s", url, upstream.status_code, content_type)
 
@@ -178,6 +188,10 @@ async def stream_response(settings, request: Request, url_fn: Callable, *args, *
     logger.info("stream: CDN url=%s proxy=%s", url, settings.strm_proxy_streams)
 
     if not settings.strm_proxy_streams:
+        return RedirectResponse(url=url, status_code=302)
+
+    if urlparse(url).scheme not in ("http", "https"):
+        logger.warning("stream: non-HTTP scheme in %s, redirecting (proxy cannot forward)", url)
         return RedirectResponse(url=url, status_code=302)
 
     return await _proxy_url(url, request)

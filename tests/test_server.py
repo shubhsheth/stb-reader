@@ -600,6 +600,32 @@ class TestProxyMode:
         assert "range" in cdn_headers
         assert cdn_headers.get("accept-encoding") == "identity"
 
+    def test_non_http_scheme_redirects_without_proxying(self, test_client_proxy):
+        # If the portal returns an RTSP/RTMP URL, the proxy cannot forward it via httpx.
+        # stream_response() must detect the scheme and fall back to a redirect so the
+        # client (e.g. FFmpeg) handles the protocol natively.
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "rtsp://cdn/live/stream"
+        with patch("server.routes._helpers.httpx.AsyncClient") as mock_cls:
+            resp = tc.get("/vod/content/77/stream", follow_redirects=False)
+            mock_cls.assert_not_called()
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "rtsp://cdn/live/stream"
+
+    def test_cdn_connect_error_returns_502(self, test_client_proxy):
+        # If httpx raises a connection error (refused, timeout, unsupported protocol),
+        # the proxy must return 502 rather than propagating an unhandled 500.
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/movie.mp4"
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+        mock_httpx_client.aclose = AsyncMock()
+        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+            resp = tc.get("/vod/content/77/stream")
+        assert resp.status_code == 502
+        assert "CDN error" in resp.json()["detail"]
+
 
 class TestCORS:
     def test_cors_header_on_proxy_endpoint(self, test_client_proxy):
