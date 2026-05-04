@@ -2,14 +2,20 @@ from collections.abc import Callable
 from urllib.parse import urljoin, quote, urlparse
 import logging
 import re
+import gzip
 
 import httpx
+from cachetools import TTLCache
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import RedirectResponse, StreamingResponse
 from starlette.background import BackgroundTask
 from stb_reader.exceptions import NotFoundError, STBError, StreamError
 
 logger = logging.getLogger(__name__)
+
+# -----------------------------
+# CONFIG / GLOBALS
+# -----------------------------
 
 _FORWARD_REQUEST_HEADERS = {"range", "accept-encoding", "user-agent"}
 _KEEP_RESPONSE_HEADERS = {
@@ -20,8 +26,21 @@ _URI_ATTR_RE = re.compile(r'URI="([^"]*)"')
 _NON_HLS_URL_SUFFIXES = frozenset(
     [".ts", ".aac", ".mp4", ".m4s", ".m4a", ".m4v", ".key", ".webm"]
 )
+
 _CDN_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 
+client = httpx.AsyncClient(
+    timeout=_CDN_TIMEOUT,
+    limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+    http2=True,
+)
+
+playlist_cache = TTLCache(maxsize=1000, ttl=5)
+
+
+# -----------------------------
+# HELPERS
+# -----------------------------
 
 def _is_hls(url: str, content_type: str) -> bool:
     mime = content_type.split(";")[0].strip().lower()
@@ -41,7 +60,16 @@ def _rewrite_m3u8(content: str, base_url: str, proxy_base: str) -> str:
     inside tag lines (#EXT-X-MEDIA, #EXT-X-KEY, #EXT-X-MAP, etc.).
     """
     def _proxy(uri: str) -> str:
-        return f"{proxy_base}/proxy?url={quote(urljoin(base_url, uri), safe='')}"
+        if uri.startswith(proxy_base):
+            return uri  # ✅ (3) avoid double proxying
+
+        full = urljoin(base_url, uri)
+        parsed = urlparse(full)
+
+        # Extract filename (preserve extension!)
+        filename = parsed.path.rsplit("/", 1)[-1] or "file"
+
+        return f"{proxy_base}/proxy/{filename}?url={quote(full, safe=':/?&=%')}"
 
     out = []
     for line in content.splitlines():
@@ -54,114 +82,186 @@ def _rewrite_m3u8(content: str, base_url: str, proxy_base: str) -> str:
     return "\n".join(out)
 
 
+async def _fetch_with_retry(req, stream=True, retries=3):
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            return await client.send(req, stream=stream, follow_redirects=True)
+        except httpx.HTTPError as exc:
+            last_exc = exc
+            logger.warning("retry %d failed: %s", attempt + 1, exc)
+    raise last_exc
+
+
+def _fix_content_type(url: str, content_type: str) -> str:
+    if content_type:
+        return content_type
+
+    path = url.split("?")[0].lower()
+    if path.endswith(".ts"):
+        return "video/mp2t"
+    if path.endswith(".m3u8"):
+        return "application/vnd.apple.mpegurl"
+    if path.endswith(".mp4") or path.endswith(".m4s"):
+        return "video/mp4"
+
+    return "application/octet-stream"
+
+
+# -----------------------------
+# MAIN PROXY
+# -----------------------------
+
 async def _proxy_url(url: str, request: Request) -> Response:
     has_range = "range" in {k.lower() for k in request.headers}
 
+    # -----------------------------
+    # PROBE (no-range)
+    # -----------------------------
     if not (has_range and _url_is_clearly_not_hls(url)):
-        # Fetch without Range first to detect HLS.
-        # A Range header causes CDNs to return 206 partial content for playlists,
-        # truncating the m3u8 before we can rewrite it.
-        # Always send accept-encoding: identity so CDN returns uncompressed bytes;
-        # forwarding the client's accept-encoding and having httpx silently decompress
-        # would cause us to send decompressed data with a gzip content-encoding header.
-        headers = {k: v for k, v in request.headers.items()
-                   if k.lower() in _FORWARD_REQUEST_HEADERS and k.lower() != "range"}
+        headers = {
+            k: v for k, v in request.headers.items()
+            if k.lower() in _FORWARD_REQUEST_HEADERS and k.lower() != "range"
+        }
         headers["accept-encoding"] = "identity"
+
         logger.info("proxy fetch: %s", url)
-        client = httpx.AsyncClient(timeout=_CDN_TIMEOUT)
+
         req = client.build_request("GET", url, headers=headers)
+
         try:
-            upstream = await client.send(req, stream=True, follow_redirects=True)
+            upstream = await _fetch_with_retry(req)
         except httpx.HTTPError as exc:
-            await client.aclose()
-            logger.warning("proxy CDN error for %s: %s", url, exc)
+            logger.warning("CDN error for %s: %s", url, exc)
             raise HTTPException(status_code=502, detail=f"CDN error: {exc}")
 
         content_type = upstream.headers.get("content-type", "")
-        logger.info("proxy upstream %s status=%d ct=%s", url, upstream.status_code, content_type)
+        logger.info(
+            "proxy: %s → %s (%d, %s)",
+            url,
+            upstream.url,
+            upstream.status_code,
+            content_type,
+        )
 
         if upstream.status_code >= 400:
             snippet = (await upstream.aread())[:200]
             await upstream.aclose()
-            await client.aclose()
-            logger.warning("upstream error for %s: status=%d body=%r", url, upstream.status_code, snippet)
             raise HTTPException(
                 status_code=502,
-                detail=f"upstream returned {upstream.status_code}: {snippet.decode('utf-8', errors='replace')}",
+                detail=f"upstream returned {upstream.status_code}: {snippet.decode(errors='replace')}",
             )
 
+        # -----------------------------
+        # HLS PLAYLIST
+        # -----------------------------
         if _is_hls(str(upstream.url), content_type):
-            body = await upstream.aread()
-            await upstream.aclose()
-            await client.aclose()
+            cache_key = str(upstream.url)
+
+            if cache_key in playlist_cache:
+                await upstream.aclose()
+                return Response(
+                    content=playlist_cache[cache_key],
+                    media_type="application/vnd.apple.mpegurl",
+                )
+
+            raw = await upstream.aread()
+
+            if upstream.headers.get("content-encoding") == "gzip":
+                raw = gzip.decompress(raw)
+
             proxy_base = str(request.base_url).rstrip("/")
-            rewritten = _rewrite_m3u8(body.decode("utf-8", errors="replace"), str(upstream.url), proxy_base)
+            rewritten = _rewrite_m3u8(
+                raw.decode("utf-8", errors="replace"),
+                str(upstream.url),
+                proxy_base,
+            )
+
             rewritten_bytes = rewritten.encode("utf-8")
+            playlist_cache[cache_key] = rewritten_bytes
+
+            await upstream.aclose()
+
             return Response(
                 content=rewritten_bytes,
                 status_code=200,
                 headers={
-                    "content-type": content_type or "application/vnd.apple.mpegurl",
+                    "content-type": "application/vnd.apple.mpegurl",
                     "content-length": str(len(rewritten_bytes)),
                 },
             )
 
+        # -----------------------------
+        # NON-HLS STREAM (no range)
+        # -----------------------------
         if not has_range:
-            keep = {k: v for k, v in upstream.headers.items() if k.lower() in _KEEP_RESPONSE_HEADERS}
+            keep = {
+                k: v for k, v in upstream.headers.items()
+                if k.lower() in _KEEP_RESPONSE_HEADERS
+            }
 
-            async def cleanup_probe():
+            keep["content-type"] = _fix_content_type(url, keep.get("content-type"))
+
+            async def cleanup():
                 await upstream.aclose()
-                await client.aclose()
 
             return StreamingResponse(
                 upstream.aiter_bytes(chunk_size=65536),
                 status_code=upstream.status_code,
                 headers=keep,
-                background=BackgroundTask(cleanup_probe),
+                background=BackgroundTask(cleanup),
             )
 
-        # Not HLS but Range was requested — close the probe and re-fetch with Range.
         await upstream.aclose()
-        await client.aclose()
 
-    # Fetch with the client's Range header (either skipped probe or re-fetch after probe).
-    headers = {k: v for k, v in request.headers.items() if k.lower() in _FORWARD_REQUEST_HEADERS}
+    # -----------------------------
+    # RANGE REQUEST (segments)
+    # -----------------------------
+    headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() in _FORWARD_REQUEST_HEADERS
+    }
     headers["accept-encoding"] = "identity"
-    logger.info("proxy fetch (range): %s", url)
-    client = httpx.AsyncClient(timeout=_CDN_TIMEOUT)
+
+    logger.debug("segment request: %s range=%s", url, headers.get("range"))
+
     req = client.build_request("GET", url, headers=headers)
+
     try:
-        upstream = await client.send(req, stream=True, follow_redirects=True)
+        upstream = await _fetch_with_retry(req)
     except httpx.HTTPError as exc:
-        await client.aclose()
-        logger.warning("proxy CDN error for %s: %s", url, exc)
+        logger.warning("CDN error for %s: %s", url, exc)
         raise HTTPException(status_code=502, detail=f"CDN error: {exc}")
-    content_type = upstream.headers.get("content-type", "")
-    logger.info("proxy upstream %s status=%d ct=%s", url, upstream.status_code, content_type)
 
     if upstream.status_code >= 400:
         snippet = (await upstream.aread())[:200]
         await upstream.aclose()
-        await client.aclose()
-        logger.warning("upstream error for %s: status=%d body=%r", url, upstream.status_code, snippet)
         raise HTTPException(
             status_code=502,
-            detail=f"upstream returned {upstream.status_code}: {snippet.decode('utf-8', errors='replace')}",
+            detail=f"upstream returned {upstream.status_code}: {snippet.decode(errors='replace')}",
         )
 
-    keep = {k: v for k, v in upstream.headers.items() if k.lower() in _KEEP_RESPONSE_HEADERS}
+    keep = {
+        k: v for k, v in upstream.headers.items()
+        if k.lower() in _KEEP_RESPONSE_HEADERS
+    }
 
-    async def cleanup_range():
+    keep["content-type"] = _fix_content_type(url, keep.get("content-type"))
+
+    async def cleanup():
         await upstream.aclose()
-        await client.aclose()
 
     return StreamingResponse(
         upstream.aiter_bytes(chunk_size=65536),
         status_code=upstream.status_code,
         headers=keep,
-        background=BackgroundTask(cleanup_range),
+        background=BackgroundTask(cleanup),
     )
 
+
+# -----------------------------
+# EXISTING FUNCTIONS (unchanged)
+# -----------------------------
 
 def stream_redirect(url_fn: Callable, *args, **kwargs) -> RedirectResponse:
     try:
@@ -191,7 +291,7 @@ async def stream_response(settings, request: Request, url_fn: Callable, *args, *
         return RedirectResponse(url=url, status_code=302)
 
     if urlparse(url).scheme not in ("http", "https"):
-        logger.warning("stream: non-HTTP scheme in %s, redirecting (proxy cannot forward)", url)
+        logger.warning("stream: non-HTTP scheme in %s, redirecting", url)
         return RedirectResponse(url=url, status_code=302)
 
     return await _proxy_url(url, request)
