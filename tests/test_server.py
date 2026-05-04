@@ -345,8 +345,8 @@ class TestProxyMode:
         assert resp.content == b"videodata"
 
     def test_proxy_forwards_range_header_for_non_hls(self, test_client_proxy):
-        # For non-HLS content, Range is forwarded on a second request so seeking works.
-        # The first request (no Range) detects content type; the second carries the Range.
+        # For URLs with known non-HLS extensions (.mp4), the proxy skips the content-type
+        # probe and issues a single CDN request with the Range header directly.
         tc, mock = test_client_proxy
         mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/movie.mp4"
         upstream = _make_upstream(b"partial", status=206, headers={
@@ -362,13 +362,11 @@ class TestProxyMode:
             resp = tc.get("/vod/content/77/stream", headers={"Range": "bytes=0-5"})
         assert resp.status_code == 206
         assert resp.headers["content-range"] == "bytes 0-5/100"
-        # build_request is called twice: first without Range, then with Range
+        # Only one CDN request — the probe is skipped for known non-HLS extensions
         all_calls = mock_httpx_client.build_request.call_args_list
-        assert len(all_calls) == 2
-        first_headers = {k.lower() for k in all_calls[0][1]["headers"]}
-        second_headers = {k.lower() for k in all_calls[1][1]["headers"]}
-        assert "range" not in first_headers
-        assert "range" in second_headers
+        assert len(all_calls) == 1
+        headers = {k.lower() for k in all_calls[0][1]["headers"]}
+        assert "range" in headers
 
     def test_lavf_user_agent_proxied_in_proxy_mode(self, test_client_proxy):
         # FFmpeg/ffprobe (Lavf UA) goes through the proxy in proxy mode so that:
@@ -536,6 +534,71 @@ class TestProxyMode:
         assert 'URI="key.bin"' not in body, "key URI not rewritten"
         assert 'URI="init.mp4"' not in body, "map URI not rewritten"
         assert body.count("/proxy?url=") == 4  # audio URI, key URI, map URI, stream URI
+
+    def test_cdn_requests_always_use_identity_encoding(self, test_client_proxy):
+        # CDN requests must always carry accept-encoding: identity regardless of what
+        # the client sent.  httpx transparently decompresses gzip responses but keeps
+        # the content-encoding header, so forwarding the client's accept-encoding would
+        # cause us to serve decompressed bytes with a stale gzip header.
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/movie.mp4"
+        upstream = _make_upstream(b"videodata", status=200, headers={"content-type": "video/mp4"})
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock(return_value=upstream)
+        mock_httpx_client.aclose = AsyncMock()
+        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+            resp = tc.get(
+                "/vod/content/77/stream",
+                headers={"Accept-Encoding": "gzip, br"},
+            )
+        assert resp.status_code == 200
+        cdn_headers = {k.lower(): v for k, v in mock_httpx_client.build_request.call_args[1]["headers"].items()}
+        assert cdn_headers.get("accept-encoding") == "identity"
+
+    def test_content_encoding_not_forwarded_to_client(self, test_client_proxy):
+        # If the CDN returns content-encoding (gzip), we must NOT forward it. httpx
+        # decompresses transparently, so the bytes we stream are already plain; sending
+        # content-encoding: gzip on top of uncompressed data causes double-decompression.
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/movie.mp4"
+        upstream = _make_upstream(b"videodata", status=200, headers={
+            "content-type": "video/mp4",
+            "content-encoding": "gzip",
+            "content-length": "9",
+        })
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock(return_value=upstream)
+        mock_httpx_client.aclose = AsyncMock()
+        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+            resp = tc.get("/vod/content/77/stream")
+        assert resp.status_code == 200
+        assert "content-encoding" not in resp.headers
+
+    def test_ts_segment_with_range_skips_probe_fetch(self, test_client_proxy):
+        # For known non-HLS extensions (.ts, .mp4, etc.) with a Range header, the proxy
+        # skips the content-type probe and goes directly to the Range fetch — one CDN
+        # connection instead of two.
+        tc, _ = test_client_proxy
+        upstream = _make_upstream(b"tsdata", status=206, headers={
+            "content-type": "video/mp2t",
+            "content-range": "bytes 0-5/100",
+            "content-length": "6",
+        })
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock(return_value=upstream)
+        mock_httpx_client.aclose = AsyncMock()
+        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+            resp = tc.get("/proxy?url=http://cdn/seg001.ts", headers={"Range": "bytes=0-5"})
+        assert resp.status_code == 206
+        assert resp.content == b"tsdata"
+        # Exactly one CDN request issued — the probe was skipped
+        assert mock_httpx_client.build_request.call_count == 1
+        cdn_headers = {k.lower(): v for k, v in mock_httpx_client.build_request.call_args[1]["headers"].items()}
+        assert "range" in cdn_headers
+        assert cdn_headers.get("accept-encoding") == "identity"
 
 
 class TestCORS:
