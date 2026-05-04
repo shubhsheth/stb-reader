@@ -484,10 +484,10 @@ class TestProxyMode:
         assert resp.status_code == 200
         assert resp.content == b"segmentdata"
 
-    def test_cdn_error_on_m3u8_url_passes_through_status(self, test_client_proxy):
-        # If CDN returns 403/404 for a .m3u8 URL, we must NOT rewrite the error body
-        # as HLS and return 200. ffprobe would receive 200+garbage and report
-        # "streams and format are both null" instead of a clear HTTP error.
+    def test_cdn_error_on_m3u8_url_returns_502_with_status_in_detail(self, test_client_proxy):
+        # If CDN returns 403/404, the proxy must raise 502 rather than streaming
+        # the error body to FFmpeg. The original CDN status is preserved in the
+        # detail string for operator diagnostics.
         tc, mock = test_client_proxy
         mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/playlist.m3u8"
         upstream = _make_upstream(
@@ -502,8 +502,8 @@ class TestProxyMode:
         mock_httpx_client.aclose = AsyncMock()
         with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
             resp = tc.get("/vod/content/77/stream")
-        assert resp.status_code == 403
-        assert b"Token expired" in resp.content
+        assert resp.status_code == 502
+        assert "403" in resp.json()["detail"]
 
     def test_proxy_rewrites_uri_attributes_in_hls_tags(self, test_client_proxy):
         # URI= attributes in #EXT-X-MEDIA, #EXT-X-KEY, #EXT-X-MAP must also go through /proxy

@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from urllib.parse import urljoin, quote
+import logging
 import re
 
 import httpx
@@ -7,6 +8,8 @@ from fastapi import HTTPException, Request, Response
 from fastapi.responses import RedirectResponse, StreamingResponse
 from starlette.background import BackgroundTask
 from stb_reader.exceptions import NotFoundError, STBError, StreamError
+
+logger = logging.getLogger(__name__)
 
 _FORWARD_REQUEST_HEADERS = {"range", "accept-encoding", "user-agent"}
 _KEEP_RESPONSE_HEADERS = {
@@ -51,6 +54,18 @@ async def _proxy_url(url: str, request: Request) -> Response:
     upstream = await client.send(req, stream=True, follow_redirects=True)
 
     content_type = upstream.headers.get("content-type", "")
+    logger.debug("upstream %s status=%d content-type=%s", upstream.url, upstream.status_code, content_type)
+
+    if upstream.status_code >= 400:
+        snippet = (await upstream.aread())[:200]
+        await upstream.aclose()
+        await client.aclose()
+        logger.warning("upstream error for %s: status=%d body=%r", url, upstream.status_code, snippet)
+        raise HTTPException(
+            status_code=502,
+            detail=f"upstream returned {upstream.status_code}: {snippet.decode('utf-8', errors='replace')}",
+        )
+
     if upstream.status_code < 400 and _is_hls(str(upstream.url), content_type):
         body = await upstream.aread()
         await upstream.aclose()
@@ -115,6 +130,7 @@ async def stream_response(settings, request: Request, url_fn: Callable, *args, *
     if not settings.strm_proxy_streams:
         return RedirectResponse(url=url, status_code=302)
 
+    logger.debug("stream_response: proxying CDN URL %s", url)
     return await _proxy_url(url, request)
 
 
