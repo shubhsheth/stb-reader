@@ -303,13 +303,18 @@ def _make_upstream(body: bytes = b"videodata", status: int = 200, headers: dict 
 
 
 class TestProxyMode:
+    @pytest.fixture(autouse=True)
+    def clear_playlist_cache(self):
+        from server.routes._helpers import playlist_cache
+        playlist_cache.clear()
+
     def _patch_httpx(self, url: str, body: bytes = b"videodata", status: int = 200, headers: dict | None = None):
         upstream = _make_upstream(body, status, headers)
         mock_client_obj = AsyncMock()
         mock_client_obj.build_request.return_value = MagicMock()
         mock_client_obj.send = AsyncMock(return_value=upstream)
         mock_client_obj.aclose = AsyncMock()
-        return patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_client_obj)
+        return patch("server.routes._helpers.client", mock_client_obj)
 
     def test_vod_content_stream_proxies_bytes(self, test_client_proxy):
         tc, mock = test_client_proxy
@@ -345,8 +350,8 @@ class TestProxyMode:
         assert resp.content == b"videodata"
 
     def test_proxy_forwards_range_header_for_non_hls(self, test_client_proxy):
-        # For non-HLS content, Range is forwarded on a second request so seeking works.
-        # The first request (no Range) detects content type; the second carries the Range.
+        # For URLs with known non-HLS extensions (.mp4), the proxy skips the content-type
+        # probe and issues a single CDN request with the Range header directly.
         tc, mock = test_client_proxy
         mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/movie.mp4"
         upstream = _make_upstream(b"partial", status=206, headers={
@@ -358,17 +363,15 @@ class TestProxyMode:
         mock_httpx_client.build_request.return_value = MagicMock()
         mock_httpx_client.send = AsyncMock(return_value=upstream)
         mock_httpx_client.aclose = AsyncMock()
-        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+        with patch("server.routes._helpers.client", mock_httpx_client):
             resp = tc.get("/vod/content/77/stream", headers={"Range": "bytes=0-5"})
         assert resp.status_code == 206
         assert resp.headers["content-range"] == "bytes 0-5/100"
-        # build_request is called twice: first without Range, then with Range
+        # Only one CDN request — the probe is skipped for known non-HLS extensions
         all_calls = mock_httpx_client.build_request.call_args_list
-        assert len(all_calls) == 2
-        first_headers = {k.lower() for k in all_calls[0][1]["headers"]}
-        second_headers = {k.lower() for k in all_calls[1][1]["headers"]}
-        assert "range" not in first_headers
-        assert "range" in second_headers
+        assert len(all_calls) == 1
+        headers = {k.lower() for k in all_calls[0][1]["headers"]}
+        assert "range" in headers
 
     def test_lavf_user_agent_proxied_in_proxy_mode(self, test_client_proxy):
         # FFmpeg/ffprobe (Lavf UA) goes through the proxy in proxy mode so that:
@@ -398,10 +401,10 @@ class TestProxyMode:
         mock_httpx_client.build_request.return_value = MagicMock()
         mock_httpx_client.send = AsyncMock(return_value=upstream)
         mock_httpx_client.aclose = AsyncMock()
-        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+        with patch("server.routes._helpers.client", mock_httpx_client):
             resp = tc.get("/vod/content/77/stream", headers={"Range": "bytes=0-100"})
         assert resp.status_code == 200
-        assert "/proxy?url=" in resp.text
+        assert "/proxy/" in resp.text
         # Range must NOT have been sent to the CDN for the playlist fetch
         first_headers = {k.lower() for k in mock_httpx_client.build_request.call_args[1]["headers"]}
         assert "range" not in first_headers
@@ -438,14 +441,14 @@ class TestProxyMode:
         mock_httpx_client.build_request.return_value = MagicMock()
         mock_httpx_client.send = AsyncMock(return_value=upstream)
         mock_httpx_client.aclose = AsyncMock()
-        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+        with patch("server.routes._helpers.client", mock_httpx_client):
             resp = tc.get("/vod/content/77/stream")
         assert resp.status_code == 200
         body = resp.text
         # URLs must go through /proxy so all CDN requests originate from the server
-        assert "/proxy?url=" in body
-        assert "cdn%2Fpath%2Ftracks-v1a1" in body
-        assert "cdn%2Fpath%2Ftracks-t1" in body
+        assert "/proxy/" in body
+        assert "cdn/path/tracks-v1a1" in body
+        assert "cdn/path/tracks-t1" in body
         assert "#EXT-X-STREAM-INF" in body
 
     def test_proxy_rewrites_absolute_urls_through_proxy_endpoint(self, test_client_proxy):
@@ -466,9 +469,9 @@ class TestProxyMode:
         mock_httpx_client.build_request.return_value = MagicMock()
         mock_httpx_client.send = AsyncMock(return_value=upstream)
         mock_httpx_client.aclose = AsyncMock()
-        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+        with patch("server.routes._helpers.client", mock_httpx_client):
             resp = tc.get("/vod/content/77/stream")
-        assert "/proxy?url=" in resp.text
+        assert "/proxy/" in resp.text
         assert "other-cdn" in resp.text
 
     def test_proxy_endpoint_streams_non_hls(self, test_client_proxy):
@@ -479,15 +482,15 @@ class TestProxyMode:
         mock_httpx_client.build_request.return_value = MagicMock()
         mock_httpx_client.send = AsyncMock(return_value=upstream)
         mock_httpx_client.aclose = AsyncMock()
-        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+        with patch("server.routes._helpers.client", mock_httpx_client):
             resp = tc.get("/proxy?url=http://cdn/seg001.ts")
         assert resp.status_code == 200
         assert resp.content == b"segmentdata"
 
-    def test_cdn_error_on_m3u8_url_passes_through_status(self, test_client_proxy):
-        # If CDN returns 403/404 for a .m3u8 URL, we must NOT rewrite the error body
-        # as HLS and return 200. ffprobe would receive 200+garbage and report
-        # "streams and format are both null" instead of a clear HTTP error.
+    def test_cdn_error_on_m3u8_url_returns_502_with_status_in_detail(self, test_client_proxy):
+        # If CDN returns 403/404, the proxy must raise 502 rather than streaming
+        # the error body to FFmpeg. The original CDN status is preserved in the
+        # detail string for operator diagnostics.
         tc, mock = test_client_proxy
         mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/playlist.m3u8"
         upstream = _make_upstream(
@@ -500,10 +503,10 @@ class TestProxyMode:
         mock_httpx_client.build_request.return_value = MagicMock()
         mock_httpx_client.send = AsyncMock(return_value=upstream)
         mock_httpx_client.aclose = AsyncMock()
-        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+        with patch("server.routes._helpers.client", mock_httpx_client):
             resp = tc.get("/vod/content/77/stream")
-        assert resp.status_code == 403
-        assert b"Token expired" in resp.content
+        assert resp.status_code == 502
+        assert "403" in resp.json()["detail"]
 
     def test_proxy_rewrites_uri_attributes_in_hls_tags(self, test_client_proxy):
         # URI= attributes in #EXT-X-MEDIA, #EXT-X-KEY, #EXT-X-MAP must also go through /proxy
@@ -527,7 +530,7 @@ class TestProxyMode:
         mock_httpx_client.build_request.return_value = MagicMock()
         mock_httpx_client.send = AsyncMock(return_value=upstream)
         mock_httpx_client.aclose = AsyncMock()
-        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+        with patch("server.routes._helpers.client", mock_httpx_client):
             resp = tc.get("/vod/content/77/stream")
         body = resp.text
         assert resp.status_code == 200
@@ -535,7 +538,101 @@ class TestProxyMode:
         assert 'URI="tracks-t1' not in body, "audio URI not rewritten"
         assert 'URI="key.bin"' not in body, "key URI not rewritten"
         assert 'URI="init.mp4"' not in body, "map URI not rewritten"
-        assert body.count("/proxy?url=") == 4  # audio URI, key URI, map URI, stream URI
+        assert body.count("?url=http://cdn/path/") == 4  # audio URI, key URI, map URI, stream URI
+
+    def test_cdn_requests_always_use_identity_encoding(self, test_client_proxy):
+        # CDN requests must always carry accept-encoding: identity regardless of what
+        # the client sent.  httpx transparently decompresses gzip responses but keeps
+        # the content-encoding header, so forwarding the client's accept-encoding would
+        # cause us to serve decompressed bytes with a stale gzip header.
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/movie.mp4"
+        upstream = _make_upstream(b"videodata", status=200, headers={"content-type": "video/mp4"})
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock(return_value=upstream)
+        mock_httpx_client.aclose = AsyncMock()
+        with patch("server.routes._helpers.client", mock_httpx_client):
+            resp = tc.get(
+                "/vod/content/77/stream",
+                headers={"Accept-Encoding": "gzip, br"},
+            )
+        assert resp.status_code == 200
+        cdn_headers = {k.lower(): v for k, v in mock_httpx_client.build_request.call_args[1]["headers"].items()}
+        assert cdn_headers.get("accept-encoding") == "identity"
+
+    def test_content_encoding_not_forwarded_to_client(self, test_client_proxy):
+        # If the CDN returns content-encoding (gzip), we must NOT forward it. httpx
+        # decompresses transparently, so the bytes we stream are already plain; sending
+        # content-encoding: gzip on top of uncompressed data causes double-decompression.
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/movie.mp4"
+        upstream = _make_upstream(b"videodata", status=200, headers={
+            "content-type": "video/mp4",
+            "content-encoding": "gzip",
+            "content-length": "9",
+        })
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock(return_value=upstream)
+        mock_httpx_client.aclose = AsyncMock()
+        with patch("server.routes._helpers.client", mock_httpx_client):
+            resp = tc.get("/vod/content/77/stream")
+        assert resp.status_code == 200
+        assert "content-encoding" not in resp.headers
+
+    def test_ts_segment_with_range_skips_probe_fetch(self, test_client_proxy):
+        # For known non-HLS extensions (.ts, .mp4, etc.) with a Range header, the proxy
+        # skips the content-type probe and goes directly to the Range fetch — one CDN
+        # connection instead of two.
+        tc, _ = test_client_proxy
+        upstream = _make_upstream(b"tsdata", status=206, headers={
+            "content-type": "video/mp2t",
+            "content-range": "bytes 0-5/100",
+            "content-length": "6",
+        })
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock(return_value=upstream)
+        mock_httpx_client.aclose = AsyncMock()
+        with patch("server.routes._helpers.client", mock_httpx_client):
+            resp = tc.get("/proxy?url=http://cdn/seg001.ts", headers={"Range": "bytes=0-5"})
+        assert resp.status_code == 206
+        assert resp.content == b"tsdata"
+        # Exactly one CDN request issued — the probe was skipped
+        assert mock_httpx_client.build_request.call_count == 1
+        cdn_headers = {k.lower(): v for k, v in mock_httpx_client.build_request.call_args[1]["headers"].items()}
+        assert "range" in cdn_headers
+        assert cdn_headers.get("accept-encoding") == "identity"
+
+    def test_non_http_scheme_redirects_without_proxying(self, test_client_proxy):
+        # If the portal returns an RTSP/RTMP URL, the proxy cannot forward it via httpx.
+        # stream_response() must detect the scheme and fall back to a redirect so the
+        # client (e.g. FFmpeg) handles the protocol natively.
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "rtsp://cdn/live/stream"
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock()
+        with patch("server.routes._helpers.client", mock_httpx_client):
+            resp = tc.get("/vod/content/77/stream", follow_redirects=False)
+            mock_httpx_client.send.assert_not_called()
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "rtsp://cdn/live/stream"
+
+    def test_cdn_connect_error_returns_502(self, test_client_proxy):
+        # If httpx raises a connection error (refused, timeout, unsupported protocol),
+        # the proxy must return 502 rather than propagating an unhandled 500.
+        tc, mock = test_client_proxy
+        mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/movie.mp4"
+        mock_httpx_client = AsyncMock()
+        mock_httpx_client.build_request.return_value = MagicMock()
+        mock_httpx_client.send = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+        mock_httpx_client.aclose = AsyncMock()
+        with patch("server.routes._helpers.client", mock_httpx_client):
+            resp = tc.get("/vod/content/77/stream")
+        assert resp.status_code == 502
+        assert "CDN error" in resp.json()["detail"]
 
 
 class TestCORS:
@@ -547,20 +644,19 @@ class TestCORS:
         mock_httpx_client.build_request.return_value = MagicMock()
         mock_httpx_client.send = AsyncMock(return_value=upstream)
         mock_httpx_client.aclose = AsyncMock()
-        with patch("server.routes._helpers.httpx.AsyncClient", return_value=mock_httpx_client):
+        with patch("server.routes._helpers.client", mock_httpx_client):
             resp = tc.get("/proxy?url=http://cdn/seg.ts", headers={"Origin": "http://player.example.com"})
         assert resp.headers.get("access-control-allow-origin") == "*"
 
     def test_cors_header_on_stream_endpoint(self, test_client_proxy):
         tc, mock = test_client_proxy
         mock.vod.get_stream_url_by_content_id.return_value = "http://cdn/movie.mp4"
-        with patch("server.routes._helpers.httpx.AsyncClient") as mock_cls:
-            upstream = _make_upstream()
-            mock_instance = AsyncMock()
-            mock_instance.build_request.return_value = MagicMock()
-            mock_instance.send = AsyncMock(return_value=upstream)
-            mock_instance.aclose = AsyncMock()
-            mock_cls.return_value = mock_instance
+        upstream = _make_upstream()
+        mock_instance = AsyncMock()
+        mock_instance.build_request.return_value = MagicMock()
+        mock_instance.send = AsyncMock(return_value=upstream)
+        mock_instance.aclose = AsyncMock()
+        with patch("server.routes._helpers.client", mock_instance):
             resp = tc.get("/vod/content/77/stream", headers={"Origin": "http://player.example.com"})
         assert resp.headers.get("access-control-allow-origin") == "*"
 
