@@ -13,7 +13,6 @@ from stb_reader.exceptions import AuthError, STBError
 from .db import (
     count_vod_content,
     delete_vod_content_rows,
-    get_auto_add_categories,
     get_content_hashes,
     get_sync_state,
     get_vod_content,
@@ -23,7 +22,6 @@ from .db import (
     upsert_vod_content,
     upsert_vod_content_category,
 )
-from .sync import add_content
 
 log = logging.getLogger(__name__)
 
@@ -87,7 +85,6 @@ def run_portal_sync(
     output_dir: str,
     delay_ms: int,
     max_pages: int,
-    server_base: str = "",
     early_stop_pages: int = 3,
     full_sync_days: int = 7,
 ) -> None:
@@ -106,7 +103,7 @@ def run_portal_sync(
         )
 
     try:
-        _run_sync(db, lock, vod, output_dir, delay_ms, max_pages, server_base, t0, early_stop_pages, full_sync_days, prev_state)
+        _run_sync(db, lock, vod, output_dir, delay_ms, max_pages, t0, early_stop_pages, full_sync_days, prev_state)
     except AuthError as exc:
         log.error("vod_sync.auth_failed", extra={"error": str(exc)})
         with lock:
@@ -126,7 +123,6 @@ def _run_sync(
     output_dir: str,
     delay_ms: int,
     max_pages: int,
-    server_base: str,
     t0: float,
     early_stop_pages: int,
     full_sync_days: int,
@@ -255,15 +251,9 @@ def _run_sync(
 
     # --- Phase 3: category associations (full sync only) ---
     if max_pages == 0 and not early_stopped:
-        auto_add_cat_ids = (
-            {c["category_id"] for c in get_auto_add_categories(db)}
-            if server_base else set()
-        )
-
         for cat in categories:
             cat_page = 1
             cat_total_pages = None
-            auto_added = 0
             while True:
                 if delay_s > 0:
                     time.sleep(delay_s)
@@ -282,28 +272,16 @@ def _run_sync(
                     per_page = result.per_page or 1
                     cat_total_pages = max(1, -(-result.total // per_page))
 
-                to_auto_add = []
                 with lock:
                     for item in result.items:
                         content_id = str(item.id)
                         if content_id in seen_ids:
                             upsert_vod_content_category(db, content_id, cat.id)
-                            if cat.id in auto_add_cat_ids:
-                                row = get_vod_content(db, content_id)
-                                if row and not row["in_library"]:
-                                    to_auto_add.append(content_id)
                     db.commit()
-
-                for cid in to_auto_add:
-                    add_content(db, vod, output_dir, server_base, cid, delay_s)
-                auto_added += len(to_auto_add)
 
                 if cat_page >= cat_total_pages:
                     break
                 cat_page += 1
-
-            if auto_added:
-                log.info("vod_sync.auto_add", extra={"category_id": cat.id, "count": auto_added})
 
         # --- Phase 4: stale content cleanup ---
         stale_ids = [

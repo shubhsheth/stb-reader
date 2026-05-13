@@ -131,7 +131,6 @@ async def trigger_sync(request: Request):
             settings.strm_output_dir,
             settings.vod_sync_request_delay_ms,
             settings.vod_sync_max_pages,
-            settings.strm_server_base_url,
         )
 
     asyncio.create_task(_run())

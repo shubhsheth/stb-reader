@@ -6,6 +6,8 @@ from .db import (
     add_strm_file,
     add_to_library,
     episode_exists,
+    get_auto_add_categories,
+    get_category_content_ids,
     get_library_item,
     get_library_items,
     get_vod_content,
@@ -153,6 +155,20 @@ def delete_content(db: sqlite3.Connection, content_id: str) -> None:
                 parent.rmdir()
             except OSError:
                 break
+
+
+def run_library_sync(
+    db: sqlite3.Connection,
+    vod,
+    output_dir: str,
+    server_base: str,
+    delay_s: float = 0,
+) -> None:
+    """Add new items for watched categories then sync new episodes for all in-library series."""
+    for cat in get_auto_add_categories(db):
+        for cid in get_category_content_ids(db, cat["category_id"]):
+            add_content(db, vod, output_dir, server_base, cid, delay_s)
+    sync_all(db, vod, output_dir, server_base, delay_s)
 
 
 def add_category_content(

@@ -11,6 +11,7 @@ from stb_reader import STBClient
 
 from .config import Settings
 from .db import count_vod_content, init_db
+from .sync import run_library_sync
 from .vod_sync import run_portal_sync
 
 
@@ -59,6 +60,15 @@ async def lifespan(app: FastAPI):
             settings.vod_sync_full_sync_days,
         )
 
+    async def _run_library_sync():
+        await asyncio.to_thread(
+            run_library_sync,
+            db, client.vod,
+            settings.strm_output_dir,
+            settings.strm_server_base_url,
+            settings.vod_sync_request_delay_ms / 1000,
+        )
+
     if count_vod_content(db) == 0:
         tasks.append(asyncio.create_task(_run_portal_sync()))
 
@@ -67,6 +77,7 @@ async def lifespan(app: FastAPI):
             while True:
                 await asyncio.sleep(settings.vod_sync_interval_hours * 3600)
                 await _run_portal_sync()
+                await _run_library_sync()
 
         tasks.append(asyncio.create_task(_sync_loop()))
 

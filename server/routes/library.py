@@ -18,7 +18,7 @@ from ..sync import (
     add_content,
     delete_content,
     delete_strm_paths,
-    sync_all,
+    run_library_sync,
     sync_category_content,
     sync_item,
 )
@@ -76,7 +76,7 @@ async def sync_library_all(request: Request):
     settings = request.app.state.settings
     vod = request.app.state.client.vod
     asyncio.create_task(asyncio.to_thread(
-        sync_all,
+        run_library_sync,
         db, vod, settings.strm_output_dir, settings.strm_server_base_url,
         settings.vod_sync_request_delay_ms / 1000,
     ))
