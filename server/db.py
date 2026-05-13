@@ -34,6 +34,8 @@ MIGRATIONS: list = [
     _add_col("vod_sync_state", "error_message",       "TEXT"),
     _add_col("vod_sync_state", "last_synced_page",    "INTEGER NOT NULL DEFAULT 0"),
     _add_col("vod_sync_state", "last_full_sync_at",   "TEXT"),
+    _add_col("vod_categories", "in_library",          "INTEGER NOT NULL DEFAULT 0"),
+    _add_col("vod_categories", "added_at",            "TEXT"),
 ]
 
 
@@ -364,6 +366,36 @@ def episode_exists(
         (content_id, season_id, episode_id),
     ).fetchone()
     return row is not None
+
+
+def get_category(db: sqlite3.Connection, category_id: str) -> dict | None:
+    row = db.execute(
+        "SELECT * FROM vod_categories WHERE category_id = ?", (category_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_content_ids_for_category(db: sqlite3.Connection, category_id: str) -> list[str]:
+    rows = db.execute(
+        "SELECT content_id FROM vod_content_category WHERE category_id = ?", (category_id,)
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def add_category_to_library(db: sqlite3.Connection, category_id: str) -> None:
+    db.execute(
+        "UPDATE vod_categories SET in_library = 1, added_at = ? WHERE category_id = ? AND in_library = 0",
+        (_now(), category_id),
+    )
+    db.commit()
+
+
+def remove_category_from_library(db: sqlite3.Connection, category_id: str) -> None:
+    db.execute(
+        "UPDATE vod_categories SET in_library = 0, added_at = NULL WHERE category_id = ?",
+        (category_id,),
+    )
+    db.commit()
 
 
 def set_last_synced(db: sqlite3.Connection, content_id: str) -> None:

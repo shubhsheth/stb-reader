@@ -28,7 +28,7 @@ server/       FastAPI + Uvicorn HTTP layer
   main.py     App factory and lifespan; mounts static/ at /
   config.py   Environment variable settings
   db.py       SQLite schema and CRUD for the library
-  sync.py     Portal-walking logic: add_content(), sync_item(), delete_content()
+  sync.py     Portal-walking logic: add_content(), sync_item(), add_or_sync_content(), delete_content()
   routes/     live_tv.py, vod.py, library.py
   static/     Frontend assets served at /
     index.html  Single-page search + library management UI
@@ -69,12 +69,12 @@ GET /vod/content/{id}/screenshot                            302 redirect to post
 ## Library Endpoints
 
 ```
-POST   /library/add/{content_id}    Add content to library; body: {"name": str, "year": str, "is_series": bool}
-                                    Returns 201 with item + strm_count, 409 if already present
-GET    /library                     List all library items (each includes strm_count)
-DELETE /library/{content_id}        Remove item and delete .strm files; 204 on success, 404 if not found
-POST   /library/sync/{content_id}   Sync new episodes for a series; returns {"new_files": n}; 404 if not found
-POST   /library/sync                Sync all series; returns [{content_id, new_files}, ...]
+POST   /library/content/{content_id}   Add (or sync if already present) a single item; 202, 404 if unknown
+DELETE /library/content/{content_id}   Remove item and delete .strm files; 204, 404 if not in library
+POST   /library/category/{category_id} Add-or-sync all content in a category; sets category in_library flag; 202, 404 if unknown
+DELETE /library/category/{category_id} Remove all content in a category and clear category in_library flag; 204, 404 if unknown
+GET    /library                        List all library items (each includes strm_count)
+POST   /library/sync                   Sync all series in library (background task); 204
 ```
 
 ## Library Environment Variables
