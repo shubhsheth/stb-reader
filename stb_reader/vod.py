@@ -10,11 +10,12 @@ if TYPE_CHECKING:
     from ._http import STBSession
 
 
+ADULT_TERMS = re.compile(r"adult|18\+", re.IGNORECASE)
+
+
 class VODService:
     def __init__(self, session: "STBSession") -> None:
         self._s = session
-
-    _ADULT_TERMS = re.compile(r"adult|18\+", re.IGNORECASE)
 
     def get_categories(self) -> list[Category]:
         data = self._s.get("vod", "get_categories")
@@ -26,7 +27,7 @@ class VODService:
                 censored=bool(c.get("censored", False)),
             )
             for c in _as_list(data)
-            if not self._ADULT_TERMS.search(c.get("title", ""))
+            if not ADULT_TERMS.search(c.get("title", ""))
         ]
 
     def get_content(
