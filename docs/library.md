@@ -46,9 +46,12 @@ Remove an item. Deletes all associated `.strm` files from disk and clears librar
 
 ### `POST /library/category/{category_id}`
 
-Add or sync every content item linked to a category (idempotent). Each item is processed the
-same way as `POST /library/content/{content_id}`. Also marks the category itself as
-in-library (`in_library = 1`, `added_at` set on first call).
+Add or sync every content item linked to a category (idempotent). Files are written into a
+subfolder named after the category (see [File Layout](#file-layout)). Also marks the category
+itself as in-library (`in_library = 1`, `added_at` set on first call).
+
+Content that is **already in the library** (placed by a previous single-item add or a prior
+category sync) is skipped — it is not moved or duplicated.
 
 **Responses:**
 - `202` — accepted; all fan-out tasks run asynchronously
@@ -58,8 +61,12 @@ in-library (`in_library = 1`, `added_at` set on first call).
 
 ### `DELETE /library/category/{category_id}`
 
-Remove every content item in the category from the library, regardless of whether those items
-belong to other categories. Clears the category's in-library flag.
+Remove the `.strm` files that were placed by this category sync (i.e. files under
+`{STRM_OUTPUT_DIR}/{CategoryName}/`). Content whose only `.strm` files were in this category
+folder is fully removed from the library. Content that also has files elsewhere (e.g. added
+via single-item add) remains in the library untouched.
+
+Clears the category's in-library flag.
 
 - `204` — done (even if no items were in the library)
 - `404` — category not found in the local portal cache
@@ -86,17 +93,29 @@ not already in the DB. No-op for movies. Runs as a background task.
 
 ## File Layout
 
-Movies follow Jellyfin's movie naming convention:
+The folder structure depends on how content was added.
+
+### Single-item add (`POST /library/content/{id}`)
+
+Files land in the shared root folders:
+
 ```
 {STRM_OUTPUT_DIR}/Movies/{Name} ({Year})/{Name} ({Year}).strm
-```
-
-Series follow Jellyfin's episode naming convention:
-```
 {STRM_OUTPUT_DIR}/TV/{Name} ({Year})/Season {NN}/{Name} ({Year}) - S{NN}E{NN} - {Episode Name}.strm
 ```
 
-Filenames are sanitised: the characters `/ \ : * ? " < > |` are replaced with `-`.
+### Category sync (`POST /library/category/{id}`)
+
+Files land under a subfolder named after the category:
+
+```
+{STRM_OUTPUT_DIR}/{CategoryName}/Movies/{Name} ({Year})/{Name} ({Year}).strm
+{STRM_OUTPUT_DIR}/{CategoryName}/TV/{Name} ({Year})/Season {NN}/{Name} ({Year}) - S{NN}E{NN} - {Episode Name}.strm
+```
+
+`{CategoryName}` is the category's title with the characters `/ \ : * ? " < > |` replaced by `-`. Each category maps to a separate top-level folder, making it easy to add each one as a distinct Jellyfin library.
+
+Filenames are sanitised in the same way: the characters `/ \ : * ? " < > |` are replaced with `-`.
 
 ---
 
