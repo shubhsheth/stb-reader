@@ -46,23 +46,30 @@ async def upsert_library_category(category_id: str, request: Request):
     if get_category(db, category_id) is None:
         raise HTTPException(status_code=404, detail="Category not found in portal cache")
     add_category_to_library(db, category_id)
-    for content_id in get_content_ids_for_category(db, category_id):
-        asyncio.create_task(asyncio.to_thread(
-            add_or_sync_content,
-            db, vod, settings.strm_output_dir, settings.strm_server_base_url, content_id,
-            settings.vod_sync_request_delay_ms / 1000,
-        ))
+    content_ids = get_content_ids_for_category(db, category_id)
+
+    async def _sync_category():
+        for content_id in content_ids:
+            await asyncio.to_thread(
+                add_or_sync_content,
+                db, vod, settings.strm_output_dir, settings.strm_server_base_url,
+                content_id, settings.vod_sync_request_delay_ms / 1000,
+            )
+
+    asyncio.create_task(_sync_category())
 
 
 @router.delete("/library/category/{category_id}", status_code=204)
 def remove_library_category(category_id: str, request: Request):
     db = request.app.state.db
+    lock = request.app.state.db_lock
     if get_category(db, category_id) is None:
         raise HTTPException(status_code=404, detail="Category not found in portal cache")
-    for content_id in get_content_ids_for_category(db, category_id):
-        if get_library_item(db, content_id) is not None:
-            delete_content(db, content_id)
-    remove_category_from_library(db, category_id)
+    with lock:
+        for content_id in get_content_ids_for_category(db, category_id):
+            if get_library_item(db, content_id) is not None:
+                delete_content(db, content_id)
+        remove_category_from_library(db, category_id)
 
 
 @router.get("/library")
