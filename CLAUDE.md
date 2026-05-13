@@ -6,9 +6,18 @@ Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-s
 
 ## 0. Spec-Driven Development
 
-**Before implementing any feature, run the spec skill.**
+**Before implementing any feature, run all three spec skills in order.**
 
-Whenever asked to build, implement, add, or create a new feature, ALWAYS invoke the `spec-driven-development` skill first by calling `/spec-driven-development` before writing any code. Do not skip this step even if the requirements seem clear.
+Whenever asked to build, implement, add, or create a new feature, ALWAYS invoke these skills in sequence before writing any code:
+
+1. `/planning-and-task-breakdown` — decompose the request into clear, ordered tasks
+   → **Stop and wait for human review before continuing.**
+2. `/spec-driven-development` — write requirements and a design spec for the feature
+   → **Stop and wait for human review before continuing.**
+3. `/incremental-implementation` — implement task-by-task, verifying each step
+   → **Stop and wait for human review before continuing.**
+
+Do not proceed past any step until the human explicitly approves.
 
 ### Spec File Naming & Structure
 
