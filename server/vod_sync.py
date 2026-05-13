@@ -14,7 +14,6 @@ from .db import (
     count_vod_content,
     delete_vod_content_rows,
     get_auto_add_categories,
-    get_category_content_ids,
     get_content_hashes,
     get_sync_state,
     get_vod_content,
@@ -256,9 +255,15 @@ def _run_sync(
 
     # --- Phase 3: category associations (full sync only) ---
     if max_pages == 0 and not early_stopped:
+        auto_add_cat_ids = (
+            {c["category_id"] for c in get_auto_add_categories(db)}
+            if server_base else set()
+        )
+
         for cat in categories:
             cat_page = 1
             cat_total_pages = None
+            auto_added = 0
             while True:
                 if delay_s > 0:
                     time.sleep(delay_s)
@@ -277,28 +282,28 @@ def _run_sync(
                     per_page = result.per_page or 1
                     cat_total_pages = max(1, -(-result.total // per_page))
 
+                to_auto_add = []
                 with lock:
                     for item in result.items:
                         content_id = str(item.id)
                         if content_id in seen_ids:
                             upsert_vod_content_category(db, content_id, cat.id)
+                            if cat.id in auto_add_cat_ids:
+                                row = get_vod_content(db, content_id)
+                                if row and not row["in_library"]:
+                                    to_auto_add.append(content_id)
                     db.commit()
+
+                for cid in to_auto_add:
+                    add_content(db, vod, output_dir, server_base, cid, delay_s)
+                auto_added += len(to_auto_add)
 
                 if cat_page >= cat_total_pages:
                     break
                 cat_page += 1
 
-        # --- Phase 3.5: auto-add new items for watched categories ---
-        if server_base:
-            for cat in get_auto_add_categories(db):
-                new_ids = get_category_content_ids(db, cat["category_id"])
-                for cid in new_ids:
-                    add_content(db, vod, output_dir, server_base, cid, delay_s)
-                if new_ids:
-                    log.info(
-                        "vod_sync.auto_add",
-                        extra={"category_id": cat["category_id"], "count": len(new_ids)},
-                    )
+            if auto_added:
+                log.info("vod_sync.auto_add", extra={"category_id": cat.id, "count": auto_added})
 
         # --- Phase 4: stale content cleanup ---
         stale_ids = [
