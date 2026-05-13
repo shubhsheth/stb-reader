@@ -13,6 +13,8 @@ from stb_reader.exceptions import AuthError, STBError
 from .db import (
     count_vod_content,
     delete_vod_content_rows,
+    get_auto_add_categories,
+    get_category_content_ids,
     get_content_hashes,
     get_sync_state,
     get_vod_content,
@@ -22,6 +24,7 @@ from .db import (
     upsert_vod_content,
     upsert_vod_content_category,
 )
+from .sync import add_content
 
 log = logging.getLogger(__name__)
 
@@ -85,6 +88,7 @@ def run_portal_sync(
     output_dir: str,
     delay_ms: int,
     max_pages: int,
+    server_base: str = "",
     early_stop_pages: int = 3,
     full_sync_days: int = 7,
 ) -> None:
@@ -103,7 +107,7 @@ def run_portal_sync(
         )
 
     try:
-        _run_sync(db, lock, vod, output_dir, delay_ms, max_pages, t0, early_stop_pages, full_sync_days, prev_state)
+        _run_sync(db, lock, vod, output_dir, delay_ms, max_pages, server_base, t0, early_stop_pages, full_sync_days, prev_state)
     except AuthError as exc:
         log.error("vod_sync.auth_failed", extra={"error": str(exc)})
         with lock:
@@ -123,6 +127,7 @@ def _run_sync(
     output_dir: str,
     delay_ms: int,
     max_pages: int,
+    server_base: str,
     t0: float,
     early_stop_pages: int,
     full_sync_days: int,
@@ -282,6 +287,18 @@ def _run_sync(
                 if cat_page >= cat_total_pages:
                     break
                 cat_page += 1
+
+        # --- Phase 3.5: auto-add new items for watched categories ---
+        if server_base:
+            for cat in get_auto_add_categories(db):
+                new_ids = get_category_content_ids(db, cat["category_id"])
+                for cid in new_ids:
+                    add_content(db, vod, output_dir, server_base, cid, delay_s)
+                if new_ids:
+                    log.info(
+                        "vod_sync.auto_add",
+                        extra={"category_id": cat["category_id"], "count": len(new_ids)},
+                    )
 
         # --- Phase 4: stale content cleanup ---
         stale_ids = [

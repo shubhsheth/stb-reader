@@ -34,6 +34,7 @@ MIGRATIONS: list = [
     _add_col("vod_sync_state", "error_message",       "TEXT"),
     _add_col("vod_sync_state", "last_synced_page",    "INTEGER NOT NULL DEFAULT 0"),
     _add_col("vod_sync_state", "last_full_sync_at",   "TEXT"),
+    _add_col("vod_categories", "auto_add",            "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
@@ -200,25 +201,51 @@ def search_vod_content(
     page: int,
     page_size: int,
     is_series: int | None,
+    category_id: str | None = None,
 ) -> tuple[list[dict], int]:
     series_filter = "" if is_series is None else f"AND c.is_series = {int(is_series)}"
-    # Escape double-quotes in FTS query
-    fts_query = query.replace('"', '""')
-    count_sql = f"""
-        SELECT count(*) FROM vod_content_fts f
-        JOIN vod_content c ON c.content_id = f.content_id
-        WHERE vod_content_fts MATCH ? {series_filter}
-    """
-    total = db.execute(count_sql, (fts_query,)).fetchone()[0]
-    rows_sql = f"""
-        SELECT c.* FROM vod_content_fts f
-        JOIN vod_content c ON c.content_id = f.content_id
-        WHERE vod_content_fts MATCH ? {series_filter}
-        ORDER BY rank
-        LIMIT ? OFFSET ?
-    """
     offset = (page - 1) * page_size
-    rows = db.execute(rows_sql, (fts_query, page_size, offset)).fetchall()
+
+    if query:
+        fts_query = query.replace('"', '""')
+        if category_id:
+            cat_join = "JOIN vod_content_category cc ON cc.content_id = c.content_id"
+            cat_filter = "AND cc.category_id = ?"
+            count_params: tuple = (fts_query, category_id)
+            rows_params: tuple = (fts_query, category_id, page_size, offset)
+        else:
+            cat_join = cat_filter = ""
+            count_params = (fts_query,)
+            rows_params = (fts_query, page_size, offset)
+        count_sql = (
+            f"SELECT count(*) FROM vod_content_fts f"
+            f" JOIN vod_content c ON c.content_id = f.content_id {cat_join}"
+            f" WHERE vod_content_fts MATCH ? {cat_filter} {series_filter}"
+        )
+        rows_sql = (
+            f"SELECT c.* FROM vod_content_fts f"
+            f" JOIN vod_content c ON c.content_id = f.content_id {cat_join}"
+            f" WHERE vod_content_fts MATCH ? {cat_filter} {series_filter}"
+            f" ORDER BY rank LIMIT ? OFFSET ?"
+        )
+    else:
+        # Category browse — no FTS required
+        count_params = (category_id,)
+        rows_params = (category_id, page_size, offset)
+        count_sql = (
+            f"SELECT count(*) FROM vod_content c"
+            f" JOIN vod_content_category cc ON cc.content_id = c.content_id"
+            f" WHERE cc.category_id = ? {series_filter}"
+        )
+        rows_sql = (
+            f"SELECT c.* FROM vod_content c"
+            f" JOIN vod_content_category cc ON cc.content_id = c.content_id"
+            f" WHERE cc.category_id = ? {series_filter}"
+            f" ORDER BY c.name LIMIT ? OFFSET ?"
+        )
+
+    total = db.execute(count_sql, count_params).fetchone()[0]
+    rows = db.execute(rows_sql, rows_params).fetchall()
     return [dict(r) for r in rows], total
 
 
@@ -263,6 +290,64 @@ def upsert_vod_content_category(
         "INSERT OR IGNORE INTO vod_content_category (content_id, category_id) VALUES (?, ?)",
         (content_id, category_id),
     )
+
+
+def get_vod_category(db: sqlite3.Connection, category_id: str) -> dict | None:
+    row = db.execute(
+        "SELECT * FROM vod_categories WHERE category_id = ?", (category_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_all_vod_categories(db: sqlite3.Connection) -> list[dict]:
+    rows = db.execute("SELECT * FROM vod_categories ORDER BY title").fetchall()
+    return [dict(r) for r in rows]
+
+
+def set_category_auto_add(db: sqlite3.Connection, category_id: str, value: int) -> None:
+    db.execute(
+        "UPDATE vod_categories SET auto_add = ? WHERE category_id = ?", (value, category_id)
+    )
+    db.commit()
+
+
+def get_auto_add_categories(db: sqlite3.Connection) -> list[dict]:
+    rows = db.execute("SELECT * FROM vod_categories WHERE auto_add = 1").fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_category_content_ids(db: sqlite3.Connection, category_id: str) -> list[str]:
+    """Return content IDs in the category that are not yet in the library."""
+    rows = db.execute(
+        "SELECT c.content_id FROM vod_content c"
+        " JOIN vod_content_category cc ON cc.content_id = c.content_id"
+        " WHERE cc.category_id = ? AND c.in_library = 0",
+        (category_id,),
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def get_category_library_content_ids(db: sqlite3.Connection, category_id: str) -> list[str]:
+    """Return content IDs in the category that are already in the library."""
+    rows = db.execute(
+        "SELECT c.content_id FROM vod_content c"
+        " JOIN vod_content_category cc ON cc.content_id = c.content_id"
+        " WHERE cc.category_id = ? AND c.in_library = 1",
+        (category_id,),
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def delete_vod_category(db: sqlite3.Connection, category_id: str) -> bool:
+    """Delete category and its content associations. Returns False if not found."""
+    if not db.execute(
+        "SELECT 1 FROM vod_categories WHERE category_id = ?", (category_id,)
+    ).fetchone():
+        return False
+    db.execute("DELETE FROM vod_content_category WHERE category_id = ?", (category_id,))
+    db.execute("DELETE FROM vod_categories WHERE category_id = ?", (category_id,))
+    db.commit()
+    return True
 
 
 # ---------------------------------------------------------------------------

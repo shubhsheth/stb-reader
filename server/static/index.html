@@ -178,6 +178,30 @@
       font-size: 0.9rem;
       display: none;
     }
+
+    #category-select {
+      padding: 0.3rem 0.6rem;
+      background: #252525;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-size: 0.8rem;
+    }
+
+    #cat-actions { display: none; gap: 0.4rem; align-items: center; }
+
+    .btn-cat {
+      background: #252525;
+      color: #aaa;
+      border: 1px solid #333;
+      padding: 0.3rem 0.75rem;
+      font-size: 0.8rem;
+    }
+
+    .btn-cat:hover:not(:disabled) { background: #2e2e2e; color: #ccc; }
+
+    .btn-cat-danger { background: #4a1a1a; color: #e07a7a; border-color: #662222; }
+    .btn-cat-danger:hover:not(:disabled) { background: #552222; }
   </style>
 </head>
 <body>
@@ -194,6 +218,13 @@
   <button class="filter-btn active" data-filter="">All</button>
   <button class="filter-btn" data-filter="0">Movies</button>
   <button class="filter-btn" data-filter="1">Series</button>
+  <select id="category-select"><option value="">All Categories</option></select>
+  <div id="cat-actions">
+    <button class="btn-cat" id="cat-add-all">Add All</button>
+    <button class="btn-cat" id="cat-remove-all">Remove All</button>
+    <button class="btn-cat" id="cat-sync">Sync</button>
+    <button class="btn-cat btn-cat-danger" id="cat-delete">Delete Category</button>
+  </div>
 </div>
 
 <div id="status-bar">
@@ -217,7 +248,8 @@
 
   let state = {
     query: '',
-    filter: '',   // '' | '0' | '1'
+    filter: '',      // '' | '0' | '1'
+    category: '',    // category_id or ''
     page: 1,
     total: 0,
     libraryIds: new Set(),
@@ -243,8 +275,10 @@
   }
 
   async function searchVod(page = 1) {
-    const params = new URLSearchParams({ query: state.query, page, page_size: PAGE_SIZE });
+    const params = new URLSearchParams({ page, page_size: PAGE_SIZE });
+    if (state.query)    params.set('query', state.query);
     if (state.filter !== '') params.set('is_series', state.filter);
+    if (state.category) params.set('category_id', state.category);
     return apiFetch(`/vod/search?${params}`);
   }
 
@@ -257,6 +291,22 @@
     await apiFetch(`/library/${contentId}`, { method: 'DELETE' });
     state.libraryIds.delete(contentId);
   }
+
+  async function loadCategories() {
+    const cats = await apiFetch('/vod/categories');
+    const sel = document.getElementById('category-select');
+    cats.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.category_id;
+      opt.textContent = c.auto_add ? `${c.title} ★` : c.title;
+      sel.appendChild(opt);
+    });
+  }
+
+  async function bulkAddCategory(id)    { return apiFetch(`/library/categories/${id}`, { method: 'POST' }); }
+  async function bulkRemoveCategory(id) { return apiFetch(`/library/categories/${id}`, { method: 'DELETE' }); }
+  async function syncCategory(id)       { return apiFetch(`/library/categories/${id}/sync`, { method: 'POST' }); }
+  async function deleteCategory(id)     { return apiFetch(`/vod/categories/${id}`, { method: 'DELETE' }); }
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -353,7 +403,7 @@
   // ── Actions ──────────────────────────────────────────────────────────────
 
   async function runSearch(page = 1) {
-    if (!state.query) return;
+    if (!state.query && !state.category) return;
     showError('');
     setLoading(true);
     showStatus('Searching…');
@@ -422,6 +472,52 @@
     if (state.page < totalPages) runSearch(state.page + 1);
   });
 
+  document.getElementById('category-select').addEventListener('change', e => {
+    state.category = e.target.value;
+    document.getElementById('cat-actions').style.display = state.category ? 'flex' : 'none';
+    runSearch(1);
+  });
+
+  async function handleCatAction(action) {
+    showError('');
+    const btns = document.querySelectorAll('#cat-actions button');
+    btns.forEach(b => b.disabled = true);
+    try {
+      if (action === 'add-all') {
+        const r = await bulkAddCategory(state.category);
+        showStatus(`Added ${r.added} items`);
+        await loadLibrary();
+        if (state.query || state.category) runSearch(1);
+      } else if (action === 'remove-all') {
+        const r = await bulkRemoveCategory(state.category);
+        showStatus(`Removed ${r.removed} items`);
+        await loadLibrary();
+        if (state.query || state.category) runSearch(1);
+      } else if (action === 'sync') {
+        await syncCategory(state.category);
+        showStatus('Sync started');
+      } else if (action === 'delete') {
+        await deleteCategory(state.category);
+        document.querySelector(`#category-select option[value="${state.category}"]`).remove();
+        state.category = '';
+        document.getElementById('category-select').value = '';
+        document.getElementById('cat-actions').style.display = 'none';
+        showStatus('Category deleted');
+        runSearch(1);
+      }
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      btns.forEach(b => b.disabled = false);
+    }
+  }
+
+  ['cat-add-all', 'cat-remove-all', 'cat-sync', 'cat-delete'].forEach(id => {
+    document.getElementById(id).addEventListener('click', () =>
+      handleCatAction(id.replace('cat-', ''))
+    );
+  });
+
   // ── Init ─────────────────────────────────────────────────────────────────
 
   function esc(str) {
@@ -431,6 +527,7 @@
   document.getElementById('pagination').style.visibility = 'hidden';
 
   loadLibrary().catch(() => {});
+  loadCategories().catch(() => {});
 </script>
 </body>
 </html>

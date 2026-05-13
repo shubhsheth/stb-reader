@@ -153,3 +153,40 @@ def delete_content(db: sqlite3.Connection, content_id: str) -> None:
                 parent.rmdir()
             except OSError:
                 break
+
+
+def add_category_content(
+    db: sqlite3.Connection,
+    vod,
+    output_dir: str,
+    server_base: str,
+    content_ids: list[str],
+    delay_s: float = 0,
+) -> int:
+    count = 0
+    for cid in content_ids:
+        count += add_content(db, vod, output_dir, server_base, cid, delay_s)
+    return count
+
+
+def delete_strm_paths(paths: list[str]) -> None:
+    for p in paths:
+        path = Path(p)
+        path.unlink(missing_ok=True)
+        for parent in [path.parent, path.parent.parent]:
+            try:
+                parent.rmdir()
+            except OSError:
+                break
+
+
+def sync_category_content(
+    db: sqlite3.Connection,
+    vod,
+    output_dir: str,
+    server_base: str,
+    content_ids: list[str],
+    delay_s: float = 0,
+) -> None:
+    for cid in content_ids:
+        sync_item(db, vod, output_dir, server_base, cid, delay_s)

@@ -3,7 +3,14 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from ..db import count_vod_content, get_sync_state, get_vod_content, search_vod_content
+from ..db import (
+    count_vod_content,
+    delete_vod_category,
+    get_all_vod_categories,
+    get_sync_state,
+    get_vod_content,
+    search_vod_content,
+)
 from ..vod_sync import run_portal_sync
 from ._helpers import paged_response, stream_response
 
@@ -12,7 +19,13 @@ router = APIRouter(prefix="/vod", tags=["vod"])
 
 @router.get("/categories")
 def get_categories(request: Request):
-    return request.app.state.client.vod.get_categories()
+    return get_all_vod_categories(request.app.state.db)
+
+
+@router.delete("/categories/{category_id}", status_code=204)
+def delete_category(category_id: str, request: Request):
+    if not delete_vod_category(request.app.state.db, category_id):
+        raise HTTPException(status_code=404, detail="Category not found")
 
 
 @router.get("/content")
@@ -105,6 +118,7 @@ async def trigger_sync(request: Request):
             settings.strm_output_dir,
             settings.vod_sync_request_delay_ms,
             settings.vod_sync_max_pages,
+            settings.strm_server_base_url,
         )
 
     asyncio.create_task(_run())
@@ -119,13 +133,16 @@ def sync_status(request: Request):
 @router.get("/search")
 def search(
     request: Request,
-    query: str,
+    query: str = Query(default=""),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     is_series: int | None = Query(default=None),
+    category_id: str | None = Query(default=None),
 ):
     db = request.app.state.db
+    if not query and not category_id:
+        raise HTTPException(status_code=400, detail="query or category_id required")
     if count_vod_content(db) == 0:
         raise HTTPException(status_code=503, detail="Portal content not yet synced")
-    items, total = search_vod_content(db, query, page, page_size, is_series)
+    items, total = search_vod_content(db, query, page, page_size, is_series, category_id)
     return {"items": items, "total": total, "page": page, "page_size": page_size}
