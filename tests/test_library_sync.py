@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from stb_reader.models import Season, Episode, EpisodeFile
 from server.db import init_db, upsert_vod_content
@@ -248,6 +248,21 @@ def test_add_or_sync_skips_already_in_library_for_category(db, tmp_path):
     assert count == 0
     cat_path = tmp_path / "Action" / "Movies" / "My Movie (2023)" / "My Movie (2023).strm"
     assert not cat_path.exists()
+
+
+def test_delay_applied_before_get_episodes_and_get_episode_files(db, tmp_path):
+    """delay_s must gate every get_episodes call (inter-season spacing) and
+    every get_episode_files call, not just pagination inside get_episodes."""
+    _seed(db, "s1", "Show", "2021", is_series=True)
+    vod = _make_vod(seasons=2, eps_per_season=2)
+
+    sleep_calls = []
+    with patch("server.sync.time.sleep", side_effect=lambda s: sleep_calls.append(s)):
+        add_content(db, vod, str(tmp_path), "http://proxy:8000", "s1", delay_s=0.1)
+
+    # 2 seasons → 2 sleeps before get_episodes
+    # 4 episodes total → 4 sleeps before get_episode_files
+    assert sleep_calls.count(0.1) == 6
 
 
 def test_add_or_sync_syncs_when_already_in_library(db, tmp_path):
