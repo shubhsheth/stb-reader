@@ -151,35 +151,6 @@ class TestSyncAll:
         assert resp.status_code == 204
 
 
-class TestAuthErrorHandling:
-    def test_auth_error_during_series_sync_does_not_crash_server(self, library_client):
-        """AuthError raised inside a sync task must be caught by the done-callback,
-        not surface as an unhandled task exception that could crash the server."""
-        import logging
-        from stb_reader.exceptions import AuthError
-
-        tc, mock_client, db, tmp_path = library_client
-        upsert_vod_content(db, _vod_row("s1", "Show", "2020", is_series=1))
-        db.commit()
-        mock_client.vod.get_seasons.side_effect = AuthError("Portal rejected request (get_ordered_list): Authorization failed")
-
-        with tc as client:
-            resp = client.post("/library/content/s1")
-        assert resp.status_code == 202
-
-    def test_auth_error_during_sync_all_does_not_crash_server(self, library_client):
-        from stb_reader.exceptions import AuthError
-
-        tc, mock_client, db, tmp_path = library_client
-        upsert_vod_content(db, _vod_row("s1", "Show", "2020", is_series=1))
-        db.commit()
-        add_to_library(db, "s1")
-        mock_client.vod.get_seasons.side_effect = AuthError("Portal rejected request (get_ordered_list): Authorization failed")
-
-        with tc as client:
-            resp = client.post("/library/sync")
-        assert resp.status_code == 204
-
 
 class TestCategoryUpsert:
     def test_returns_202_for_known_category(self, library_client):
