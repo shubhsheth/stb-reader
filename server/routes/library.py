@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
@@ -19,7 +20,13 @@ from ..db import (
 from ..sync import add_or_sync_content, delete_content, sanitize, sync_all
 from stb_reader.vod import ADULT_TERMS
 
+log = logging.getLogger(__name__)
 router = APIRouter(tags=["library"])
+
+
+def _log_task_error(task: asyncio.Task) -> None:
+    if not task.cancelled() and (exc := task.exception()):
+        log.error("background sync failed: %s", exc, exc_info=exc)
 
 
 @router.post("/library/content/{content_id}", status_code=202)
@@ -29,11 +36,12 @@ async def upsert_library_content(content_id: str, request: Request):
     vod = request.app.state.client.vod
     if get_vod_content(db, content_id) is None:
         raise HTTPException(status_code=404, detail="Content not found in portal cache")
-    asyncio.create_task(asyncio.to_thread(
+    task = asyncio.create_task(asyncio.to_thread(
         add_or_sync_content,
         db, vod, settings.strm_output_dir, settings.strm_server_base_url, content_id,
         settings.vod_sync_request_delay_ms / 1000,
     ))
+    task.add_done_callback(_log_task_error)
 
 
 @router.delete("/library/content/{content_id}", status_code=204)
@@ -64,7 +72,8 @@ async def upsert_library_category(category_id: str, request: Request):
                 content_id, settings.vod_sync_request_delay_ms / 1000, folder,
             )
 
-    asyncio.create_task(_sync_category())
+    task = asyncio.create_task(_sync_category())
+    task.add_done_callback(_log_task_error)
 
 
 @router.delete("/library/category/{category_id}", status_code=204)
@@ -109,8 +118,9 @@ async def sync_library_all(request: Request):
     db = request.app.state.db
     settings = request.app.state.settings
     vod = request.app.state.client.vod
-    asyncio.create_task(asyncio.to_thread(
+    task = asyncio.create_task(asyncio.to_thread(
         sync_all,
         db, vod, settings.strm_output_dir, settings.strm_server_base_url,
         settings.vod_sync_request_delay_ms / 1000,
     ))
+    task.add_done_callback(_log_task_error)

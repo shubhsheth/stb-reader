@@ -93,3 +93,16 @@ def test_reauth_not_called_twice_on_persistent_failure(mocked, session):
     mocked.add(responses_lib.GET, PORTAL_URL, body="Authorization failed. 75")
     with pytest.raises(AuthError):
         session.get("stb", "handshake")
+
+
+def test_reauth_raises_auth_error_when_reauth_itself_fails(mocked, session):
+    # reauth_fn calls session.get internally (like the real authenticate())
+    # If handshake also gets auth failure, we must raise AuthError instead of deadlocking
+    def failing_reauth():
+        session.get("stb", "handshake")
+
+    session.reauth_fn = failing_reauth
+    mocked.add(responses_lib.GET, PORTAL_URL, body="Authorization failed. 75")  # original call
+    mocked.add(responses_lib.GET, PORTAL_URL, body="Authorization failed. 75")  # reauth's handshake
+    with pytest.raises(AuthError):
+        session.get("stb", "some_action")
