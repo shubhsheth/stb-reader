@@ -17,6 +17,7 @@ from ..db import (
     remove_from_library,
 )
 from ..sync import add_or_sync_content, delete_content, sanitize, sync_all
+from stb_reader.vod import ADULT_TERMS
 
 router = APIRouter(tags=["library"])
 
@@ -94,7 +95,8 @@ def remove_library_category(category_id: str, request: Request):
 
 @router.get("/library/categories")
 def list_library_categories(request: Request):
-    return list_categories(request.app.state.db)
+    cats = list_categories(request.app.state.db)
+    return [c for c in cats if not ADULT_TERMS.search(c["title"])]
 
 
 @router.get("/library")
