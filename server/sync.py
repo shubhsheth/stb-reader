@@ -143,6 +143,19 @@ def sync_all(
         sync_item(db, vod, output_dir, server_base, item["content_id"], delay_s)
 
 
+def add_or_sync_content(
+    db: sqlite3.Connection,
+    vod,
+    output_dir: str,
+    server_base: str,
+    content_id: str,
+    delay_s: float = 0,
+) -> int:
+    if get_library_item(db, content_id) is None:
+        return add_content(db, vod, output_dir, server_base, content_id, delay_s)
+    return sync_item(db, vod, output_dir, server_base, content_id, delay_s)
+
+
 def delete_content(db: sqlite3.Connection, content_id: str) -> None:
     paths = remove_from_library(db, content_id)
     for p in paths:

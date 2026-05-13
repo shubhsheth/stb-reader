@@ -3,7 +3,14 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 from stb_reader.models import Season, Episode, EpisodeFile
-from server.db import init_db, upsert_vod_content
+from server.db import (
+    init_db,
+    upsert_vod_content,
+    upsert_vod_category,
+    upsert_vod_content_category,
+    add_to_library,
+    add_strm_file,
+)
 
 
 BASE_ENV = {
@@ -77,45 +84,30 @@ def _setup_series_vod(mock_client, seasons: int = 1, eps_per_season: int = 2) ->
     mock_client.vod.get_episode_files.side_effect = lambda cid, sid, eid: file_map.get(eid, [])
 
 
-class TestAddContent:
-    def test_add_returns_202(self, library_client):
+class TestUpsertContent:
+    def test_returns_202_for_new_content(self, library_client):
         tc, mock_client, db, tmp_path = library_client
-        upsert_vod_content(db, _vod_row("m1", "My Movie", "2023", is_series=0))
+        upsert_vod_content(db, _vod_row("m1"))
         db.commit()
-        resp = tc.post("/library/add/m1")
+        resp = tc.post("/library/content/m1")
         assert resp.status_code == 202
 
-    def test_add_unknown_returns_404(self, library_client):
+    def test_returns_202_for_content_already_in_library(self, library_client):
+        tc, mock_client, db, tmp_path = library_client
+        upsert_vod_content(db, _vod_row("m1", is_series=0))
+        db.commit()
+        add_to_library(db, "m1")
+        resp = tc.post("/library/content/m1")
+        assert resp.status_code == 202
+
+    def test_returns_404_for_unknown_content(self, library_client):
         tc, _, db, _ = library_client
-        resp = tc.post("/library/add/unknown")
+        resp = tc.post("/library/content/unknown")
         assert resp.status_code == 404
 
-    def test_add_duplicate_returns_409(self, library_client):
-        tc, mock_client, db, tmp_path = library_client
-        upsert_vod_content(db, _vod_row("m1"))
-        db.commit()
-        tc.post("/library/add/m1")
-        resp = tc.post("/library/add/m1")
-        assert resp.status_code == 409
 
-
-class TestListLibrary:
-    def test_lists_only_in_library_items(self, library_client):
-        tc, mock_client, db, tmp_path = library_client
-        upsert_vod_content(db, _vod_row("m1"))
-        upsert_vod_content(db, _vod_row("m2"))
-        db.commit()
-        tc.post("/library/add/m1")
-        resp = tc.get("/library")
-        assert resp.status_code == 200
-        items = resp.json()
-        assert len(items) == 1
-        assert items[0]["content_id"] == "m1"
-
-
-class TestDeleteLibrary:
-    def test_delete_returns_204_and_removes_strm(self, library_client):
-        from server.db import add_strm_file, add_to_library
+class TestDeleteContent:
+    def test_returns_204_and_removes_strm(self, library_client):
         tc, mock_client, db, tmp_path = library_client
         upsert_vod_content(db, _vod_row("m1", "Movie", "2023"))
         db.commit()
@@ -124,36 +116,117 @@ class TestDeleteLibrary:
         strm.parent.mkdir(parents=True, exist_ok=True)
         strm.write_text("http://x\n")
         add_strm_file(db, "m1", None, None, "m1", str(strm))
-        resp = tc.delete("/library/m1")
+        resp = tc.delete("/library/content/m1")
         assert resp.status_code == 204
         assert not strm.exists()
 
-    def test_delete_unknown_returns_404(self, library_client):
+    def test_returns_404_when_not_in_library(self, library_client):
         tc, _, db, _ = library_client
-        resp = tc.delete("/library/unknown")
+        resp = tc.delete("/library/content/unknown")
         assert resp.status_code == 404
 
 
-class TestSyncContent:
-    def test_sync_item_returns_204(self, library_client):
+class TestListLibrary:
+    def test_lists_only_in_library_items(self, library_client):
         tc, mock_client, db, tmp_path = library_client
-        upsert_vod_content(db, _vod_row("s1", "Show", "2020", is_series=1))
+        upsert_vod_content(db, _vod_row("m1"))
+        upsert_vod_content(db, _vod_row("m2"))
         db.commit()
-        _setup_series_vod(mock_client, seasons=1, eps_per_season=1)
-        tc.post("/library/add/s1")
-        resp = tc.post("/library/sync/s1")
-        assert resp.status_code == 204
+        add_to_library(db, "m1")
+        resp = tc.get("/library")
+        assert resp.status_code == 200
+        items = resp.json()
+        assert len(items) == 1
+        assert items[0]["content_id"] == "m1"
 
-    def test_sync_unknown_returns_404(self, library_client):
-        tc, _, db, _ = library_client
-        resp = tc.post("/library/sync/unknown")
-        assert resp.status_code == 404
 
+class TestSyncAll:
     def test_sync_all_returns_204(self, library_client):
         tc, mock_client, db, tmp_path = library_client
         upsert_vod_content(db, _vod_row("s1", "Show", "2020", is_series=1))
         db.commit()
         _setup_series_vod(mock_client, seasons=1, eps_per_season=1)
-        tc.post("/library/add/s1")
+        add_to_library(db, "s1")
         resp = tc.post("/library/sync")
+        assert resp.status_code == 204
+
+
+class TestCategoryUpsert:
+    def test_returns_202_for_known_category(self, library_client):
+        tc, _, db, _ = library_client
+        upsert_vod_category(db, "cat1", "Action", "")
+        db.commit()
+        resp = tc.post("/library/category/cat1")
+        assert resp.status_code == 202
+
+    def test_sets_in_library_on_category(self, library_client):
+        from server.db import get_category
+        tc, _, db, _ = library_client
+        upsert_vod_category(db, "cat1", "Action", "")
+        db.commit()
+        tc.post("/library/category/cat1")
+        cat = get_category(db, "cat1")
+        assert cat["in_library"] == 1
+        assert cat["added_at"] is not None
+
+    def test_returns_404_for_unknown_category(self, library_client):
+        tc, _, db, _ = library_client
+        resp = tc.post("/library/category/unknown")
+        assert resp.status_code == 404
+
+    def test_enqueues_task_for_each_content_item(self, library_client):
+        tc, _, db, _ = library_client
+        upsert_vod_category(db, "cat1", "Action", "")
+        upsert_vod_content(db, _vod_row("m1"))
+        upsert_vod_content(db, _vod_row("m2"))
+        db.commit()
+        upsert_vod_content_category(db, "m1", "cat1")
+        upsert_vod_content_category(db, "m2", "cat1")
+        db.commit()
+        resp = tc.post("/library/category/cat1")
+        assert resp.status_code == 202
+
+
+class TestCategoryDelete:
+    def test_returns_204_for_known_category(self, library_client):
+        tc, _, db, _ = library_client
+        upsert_vod_category(db, "cat1", "Action", "")
+        db.commit()
+        resp = tc.delete("/library/category/cat1")
+        assert resp.status_code == 204
+
+    def test_removes_linked_content_from_library(self, library_client):
+        from server.db import get_library_item, get_category
+        tc, _, db, tmp_path = library_client
+        upsert_vod_category(db, "cat1", "Action", "")
+        upsert_vod_content(db, _vod_row("m1", "Movie", "2023"))
+        db.commit()
+        upsert_vod_content_category(db, "m1", "cat1")
+        db.commit()
+        add_to_library(db, "m1")
+        strm = tmp_path / "Movies" / "Movie (2023)" / "Movie (2023).strm"
+        strm.parent.mkdir(parents=True, exist_ok=True)
+        strm.write_text("http://x\n")
+        add_strm_file(db, "m1", None, None, "m1", str(strm))
+
+        resp = tc.delete("/library/category/cat1")
+        assert resp.status_code == 204
+        assert get_library_item(db, "m1") is None
+        assert not strm.exists()
+        assert get_category(db, "cat1")["in_library"] == 0
+
+    def test_returns_404_for_unknown_category(self, library_client):
+        tc, _, db, _ = library_client
+        resp = tc.delete("/library/category/unknown")
+        assert resp.status_code == 404
+
+    def test_succeeds_when_no_content_in_library(self, library_client):
+        tc, _, db, _ = library_client
+        upsert_vod_category(db, "cat1", "Action", "")
+        upsert_vod_content(db, _vod_row("m1"))
+        db.commit()
+        upsert_vod_content_category(db, "m1", "cat1")
+        db.commit()
+        # m1 is NOT in library
+        resp = tc.delete("/library/category/cat1")
         assert resp.status_code == 204

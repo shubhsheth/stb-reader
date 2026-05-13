@@ -7,8 +7,8 @@ Each `.strm` file contains a single proxy URL that Jellyfin uses to fetch the st
 ## Concept
 
 ```
-browse GET /vod/content
-  → POST /library/add/{id}  (with name, year, is_series from browse result)
+browse GET /vod/content or GET /vod/categories
+  → POST /library/content/{id}  or  POST /library/category/{id}
     → .strm files written to STRM_OUTPUT_DIR
     → Jellyfin picks up files, shows show with seasons + episodes
     → episode playback hits proxy → proxy resolves stream URL → Jellyfin plays it
@@ -21,20 +21,48 @@ without re-adding the series.
 
 ## Endpoints
 
-### `POST /library/add/{content_id}`
+### `POST /library/content/{content_id}`
 
-Add content to the library. Provide the name, year, and type from your browse results.
-
-**Request body:**
-```json
-{"name": "Breaking Bad", "year": "2008", "is_series": true}
-```
+Add content to the library, or sync it if already present (idempotent). File-writing happens
+in a background task.
 
 **Responses:**
-- `201` — item added; body includes all item fields plus `strm_count` (number of `.strm` files written)
-- `409` — already in the library
+- `202` — accepted; `.strm` files will be written asynchronously
+- `404` — content not found in the local portal cache
 
 For a movie, one `.strm` file is written. For a series, one file is written per episode.
+Re-posting a series already in the library writes only new episodes (no-op for movies).
+
+---
+
+### `DELETE /library/content/{content_id}`
+
+Remove an item. Deletes all associated `.strm` files from disk and clears library flags.
+
+- `204` — deleted
+- `404` — not in library
+
+---
+
+### `POST /library/category/{category_id}`
+
+Add or sync every content item linked to a category (idempotent). Each item is processed the
+same way as `POST /library/content/{content_id}`. Also marks the category itself as
+in-library (`in_library = 1`, `added_at` set on first call).
+
+**Responses:**
+- `202` — accepted; all fan-out tasks run asynchronously
+- `404` — category not found in the local portal cache
+
+---
+
+### `DELETE /library/category/{category_id}`
+
+Remove every content item in the category from the library, regardless of whether those items
+belong to other categories. Clears the category's in-library flag.
+
+- `204` — done (even if no items were in the library)
+- `404` — category not found in the local portal cache
 
 ---
 
@@ -47,36 +75,12 @@ List all library items. Each item includes:
 
 ---
 
-### `DELETE /library/{content_id}`
-
-Remove an item. Deletes all associated `.strm` files from disk and all DB records.
-
-- `204` — deleted
-- `404` — not in library
-
----
-
-### `POST /library/sync/{content_id}`
-
-Sync a single series: walk the portal tree and write `.strm` files for any episodes not
-already in the DB. No-op for movies (returns `0`).
-
-**Response:** `{"new_files": 3}`
-
-- `404` — not in library
-
----
-
 ### `POST /library/sync`
 
-Sync all series in the library. Returns a per-item summary:
+Sync all series in the library: walk the portal tree and write `.strm` files for any episodes
+not already in the DB. No-op for movies. Runs as a background task.
 
-```json
-[
-  {"content_id": "123", "new_files": 2},
-  {"content_id": "456", "new_files": 0}
-]
-```
+- `204` — accepted
 
 ---
 

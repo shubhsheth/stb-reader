@@ -14,6 +14,7 @@ from server.sync import (
     sync_item,
     sync_all,
     delete_content,
+    add_or_sync_content,
 )
 
 
@@ -182,3 +183,30 @@ def test_delete_content_removes_files(db, tmp_path):
     assert path.exists()
     delete_content(db, "m1")
     assert not path.exists()
+
+
+# --- add_or_sync_content tests ---
+
+def test_add_or_sync_adds_when_not_in_library(db, tmp_path):
+    _seed(db, "m1", "Movie", "2023", is_series=False)
+    vod = MagicMock()
+    count = add_or_sync_content(db, vod, str(tmp_path), "http://proxy:8000", "m1")
+    assert count == 1
+    path = tmp_path / "Movies" / "Movie (2023)" / "Movie (2023).strm"
+    assert path.exists()
+
+
+def test_add_or_sync_syncs_when_already_in_library(db, tmp_path):
+    _seed(db, "s1", "Show", "2021", is_series=True)
+    vod = _make_vod(1, 1)
+    add_content(db, vod, str(tmp_path), "http://proxy:8000", "s1")
+
+    new_ep = Episode(id="1_2", name="Episode 2", series_number="2", cmd="x")
+    orig = vod.get_episodes.side_effect
+    vod.get_episodes.side_effect = lambda cid, sid, delay_s=0: orig(cid, sid) + [new_ep]
+    vod.get_episode_files.side_effect = lambda cid, sid, eid: (
+        [EpisodeFile(id=f"f_{eid}", name="HD", cmd="/media/x.mpg")]
+    )
+
+    count = add_or_sync_content(db, vod, str(tmp_path), "http://proxy:8000", "s1")
+    assert count == 1
