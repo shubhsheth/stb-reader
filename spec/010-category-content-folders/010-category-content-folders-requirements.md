@@ -41,34 +41,31 @@ making it impossible to separate categories as distinct Jellyfin libraries.
   - The category's `in_library` and `added_at` fields in `vod_categories` continue to be set
     as they are today.
 
-- **FR-3** `strm_files` schema — new nullable column `category_id TEXT`.
-  - NULL means the file was placed by a single-item add.
-  - Non-NULL (the category's `category_id`) means the file was placed by a category sync.
-  - Added via the existing append-only `MIGRATIONS` list in `db.py`.
-
-- **FR-4** `add_strm_file()` DB helper — accepts a new optional `category_id: str | None = None`
-  parameter and stores it.
-
-- **FR-5** `movie_strm_path()` and `episode_strm_path()` — each gain an optional
+- **FR-3** `movie_strm_path()` and `episode_strm_path()` — each gain an optional
   `category_folder: str | None = None` parameter.
   - When `None`: path is `{output_dir}/Movies/…` or `{output_dir}/TV/…` (current behaviour).
   - When set: path is `{output_dir}/{category_folder}/Movies/…` or `{output_dir}/{category_folder}/TV/…`.
 
-- **FR-6** `add_content()`, `_write_series_strm_files()`, and `add_or_sync_content()` each gain
-  an optional `category_folder: str | None = None` and `category_id: str | None = None` pair,
-  threaded through to path-building and `add_strm_file()`.
+- **FR-4** `add_content()`, `_write_series_strm_files()`, `sync_item()`, and
+  `add_or_sync_content()` each gain an optional `category_folder: str | None = None`,
+  threaded through to path-building functions.
 
-- **FR-7** Category route passes the sanitized category title as `category_folder` and the raw
-  `category_id` as `category_id` when calling `add_or_sync_content`.
+- **FR-5** Category route passes the sanitized category title as `category_folder` when calling
+  `add_or_sync_content`. No schema change to `strm_files` is required — the path structure
+  alone encodes which context placed the file.
 
-- **FR-8** `DELETE /library/category/{category_id}` — **modified deletion scope**.
-  - Queries `strm_files` for rows where `category_id = ?` (the deleted category).
+- **FR-6** `DELETE /library/category/{category_id}` — **modified deletion scope**.
+  - Computes the category folder prefix: `Path(output_dir) / sanitize(category["title"])`.
+  - Queries `strm_files` for all rows belonging to content in this category, then filters to
+    those whose `strm_path` starts with the category folder prefix.
   - Deletes those `.strm` files from disk and removes those rows from `strm_files`.
   - For each affected `content_id`: if no `strm_files` rows remain, clears its library flags
     (`in_library = 0`, `added_at = NULL`); otherwise leaves it in library.
+  - Single-add files (under `{output_dir}/Movies/…` or `{output_dir}/TV/…`) never match the
+    category prefix and are therefore never deleted by this operation.
   - Clears the category's own library flags in `vod_categories`.
 
-- **FR-9** `DELETE /library/content/{content_id}` — **unchanged**.
+- **FR-7** `DELETE /library/content/{content_id}` — **unchanged**.
   - Deletes **all** `strm_files` rows for that content (across all category folders) and all
     corresponding disk files. This is the same as the current behaviour.
 
@@ -76,11 +73,9 @@ making it impossible to separate categories as distinct Jellyfin libraries.
 
 ## Non-Functional Requirements
 
-- **NFR-1** No new external Python dependencies.
-- **NFR-2** The migration is backward-compatible: existing `strm_files` rows get `category_id = NULL`,
-  which is correct (they were written by single-item adds or the old category sync that used root folders).
-- **NFR-3** Category fan-out continues to run in a background task; the HTTP response must not block.
-- **NFR-4** Sanitization of the category title uses the existing `sanitize()` function — no new
+- **NFR-1** No new external Python dependencies and no schema migrations required.
+- **NFR-2** Category fan-out continues to run in a background task; the HTTP response must not block.
+- **NFR-3** Sanitization of the category title uses the existing `sanitize()` function — no new
   character-escaping logic is introduced.
 
 ---
@@ -89,7 +84,7 @@ making it impossible to separate categories as distinct Jellyfin libraries.
 
 - Moving existing strm files when a category is re-synced (files written before this feature are
   left in place; new content in the category will go to the category folder going forward).
-- Showing per-file `category_id` in any API response.
+- Any schema changes to `strm_files` (no new columns needed).
 - Supporting multiple category folders for the same content item (first-wins is the rule).
 - Any changes to `POST /library/sync` (sync-all) behaviour.
 - Any changes to `GET /library` or `GET /library/categories` response shapes.
@@ -182,7 +177,7 @@ async def upsert_library_category(category_id: str, request: Request):
                 add_or_sync_content,
                 db, vod, settings.strm_output_dir, settings.strm_server_base_url,
                 content_id, settings.vod_sync_request_delay_ms / 1000,
-                folder, category_id,
+                folder,
             )
     asyncio.create_task(_sync_category())
 ```
@@ -196,8 +191,8 @@ async def upsert_library_category(category_id: str, request: Request):
   `category_folder`.
 - **Sync integration tests** (`test_library_sync.py`): category sync writes files under the
   category subfolder; single add writes files under root; already-in-library content is skipped.
-- **DB tests** (`test_library_db.py`): migration adds `category_id` column; `add_strm_file`
-  stores it; new deletion helper returns correct paths and cleans up library flags.
+- **DB tests** (`test_library_db.py`): new deletion helper filters by path prefix, returns
+  correct paths, and cleans up library flags correctly.
 - **Route tests** (`test_library_routes.py`): `DELETE /library/category/{id}` removes only
   that category's files; content with only category files is removed from library; content
   with additional files (hypothetically) remains.
@@ -208,7 +203,7 @@ async def upsert_library_category(category_id: str, request: Request):
 ## Boundaries
 
 - **Always:** run `pytest tests/ -q` before committing; keep path functions pure (no I/O, no DB).
-- **Ask first:** any schema change beyond adding the `category_id` column to `strm_files`.
+- **Ask first:** any schema changes to `strm_files` or other tables.
 - **Never:** move or delete strm files that belong to a different category or single-add context
   when processing a category deletion; add new Python dependencies.
 
@@ -222,17 +217,15 @@ async def upsert_library_category(category_id: str, request: Request):
    `{STRM_OUTPUT_DIR}/Movies/…` or `{STRM_OUTPUT_DIR}/TV/…` — no subfolder.
 3. If content is already `in_library = 1`, a subsequent category sync does not write any new
    `.strm` files for it and does not change its existing file paths.
-4. `strm_files` rows written by a category sync have a non-NULL `category_id`; rows written by
-   single add have `category_id = NULL`.
-5. `DELETE /library/category/{id}` deletes only the `.strm` files (disk + DB rows) whose
-   `category_id` matches the deleted category.
-6. After a category delete, a content item that had files only in that category folder has
-   `in_library = 0` and no remaining `strm_files` rows.
-7. After a category delete, a content item that still has strm files in another context remains
-   `in_library = 1`.
-8. `DELETE /library/content/{id}` still removes all strm files across all contexts (unchanged).
-9. Existing `strm_files` rows with `category_id = NULL` are unaffected by the migration.
-10. `pytest tests/ -q` exits 0 with no failures.
+4. `DELETE /library/category/{id}` deletes only `.strm` files (disk + DB rows) whose path
+   starts with `{STRM_OUTPUT_DIR}/{sanitized_category_title}/`.
+5. After a category delete, a content item whose only strm files were in that category folder
+   has `in_library = 0` and no remaining `strm_files` rows.
+6. After a category delete, a content item that also has a single-add strm file (under root
+   `Movies/` or `TV/`) remains `in_library = 1` and its single-add file is untouched.
+7. `DELETE /library/content/{id}` still removes all strm files for that content (unchanged).
+8. No changes to the `strm_files` schema — no new columns or migrations.
+9. `pytest tests/ -q` exits 0 with no failures.
 
 ---
 

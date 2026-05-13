@@ -3,87 +3,80 @@
 ## Components and Dependencies
 
 ```
-strm_files.category_id column (DB migration)
-    └─► add_strm_file() accepts category_id
-        └─► _write_series_strm_files() stores category_id
-            └─► add_content() passes category_id
-                └─► add_or_sync_content() accepts + passes category_id & category_folder
-
 movie_strm_path() / episode_strm_path() accept category_folder
     └─► _write_series_strm_files() passes category_folder
         └─► add_content() passes category_folder
+            └─► add_or_sync_content() accepts + passes category_folder
+                └─► sync_item() accepts + passes category_folder
 
 Category route reads category title → sanitize → category_folder
-    └─► calls add_or_sync_content with (category_folder, category_id)
+    └─► calls add_or_sync_content(…, category_folder=folder)
 
-New DB helper: get_strm_paths_for_category() + remove_category_strm_files()
+New DB helper: remove_category_strm_files(db, content_ids, path_prefix)
     └─► Category delete route uses scoped removal
-        └─► Checks remaining strm_files to decide if content stays in_library
+        └─► Checks remaining strm_files per content_id to decide if content stays in_library
 ```
 
 ## Implementation Order
 
 Sequential — each group depends on the one above.
 
-### Phase 1 — DB layer (foundation)
+### Phase 1 — Path functions (no dependencies)
 
-All other phases depend on the `category_id` column and updated `add_strm_file` signature.
+Pure functions; can be reviewed in isolation.
 
-1. **DB migration**: append `_add_col("strm_files", "category_id", "TEXT")` to `MIGRATIONS`.
-2. **`add_strm_file`**: add `category_id: str | None = None` parameter; store it.
-3. **New delete helpers**: `get_strm_paths_for_category(db, category_id)` and
-   `remove_category_strm_files(db, category_id)` — used by the updated category delete route.
+1. **`movie_strm_path`** / **`episode_strm_path`**: add `category_folder: str | None = None`.
 
-### Phase 2 — Path functions
+### Phase 2 — Sync helpers
 
-Pure functions; no dependencies on Phase 1. Can be reviewed independently.
+Depends on Phase 1 (updated path function signatures).
 
-4. **`movie_strm_path`** / **`episode_strm_path`**: add `category_folder: str | None = None`.
+2. **`_write_series_strm_files`**: add `category_folder` param; pass to `episode_strm_path`.
+3. **`add_content`**: add `category_folder` param; pass to `_write_series_strm_files` and
+   `movie_strm_path`.
+4. **`sync_item`**: add `category_folder` param; pass to `_write_series_strm_files`.
+5. **`add_or_sync_content`**: add `category_folder` param; pass to `add_content` and `sync_item`.
 
-### Phase 3 — Sync helpers
+### Phase 3 — DB helpers
 
-Depends on Phase 1 (add_strm_file signature) and Phase 2 (path functions).
+No dependency on Phases 1–2; can be developed alongside them.
 
-5. **`_write_series_strm_files`**: add `category_folder` and `category_id` params; pass to
-   path functions and `add_strm_file`.
-6. **`add_content`**: add `category_folder` and `category_id` params; pass down.
-7. **`add_or_sync_content`**: add `category_folder` and `category_id` params; pass to
-   `add_content` and `sync_item` (sync_item already no-ops for movies, passes through for
-   series episodes).
+6. **`remove_category_strm_files`**: accepts a list of `content_id` values and a path prefix
+   string; deletes `strm_files` rows whose `strm_path` starts with the prefix; returns deleted
+   paths for disk cleanup.
 
 ### Phase 4 — Routes
 
-Depends on Phase 1 (delete helpers) and Phase 3 (add_or_sync_content signature).
+Depends on Phase 2 (add_or_sync_content signature) and Phase 3 (delete helper).
 
-8. **Category add route** (`POST /library/category/{id}`): look up category, sanitize title,
-   pass `category_folder` and `category_id` to `add_or_sync_content`.
-9. **Category delete route** (`DELETE /library/category/{id}`): replace `delete_content` fan-out
-   with scoped removal using `remove_category_strm_files`; check remaining strm_files per content
-   item; call `remove_from_library` only when count reaches zero.
+7. **Category add route**: compute `folder = sanitize(cat["title"])`, pass as `category_folder`.
+8. **Category delete route**: compute path prefix, call `remove_category_strm_files`, delete
+   disk files, then clear library flags for content with no remaining strm rows.
 
 ### Phase 5 — Tests + docs
 
-10. Extended tests covering all new behaviour.
-11. `docs/library.md` updated with new folder layout.
+9. Extended tests for all new behaviour.
+10. `docs/library.md` updated with new folder layout.
 
 ## Risks and Mitigations
 
 | Risk | Mitigation |
 |------|-----------|
-| `add_strm_file` call sites in `sync.py` break due to signature change | Add `category_id=None` default — all existing callers continue to work without change |
-| Category delete removes too much (old all-content deletion) | New helper queries by `category_id`; content with NULL or different `category_id` rows is untouched |
-| Existing `strm_files` rows (NULL `category_id`) silently included in a category delete | `WHERE category_id = ?` with a non-NULL value never matches NULL rows in SQLite |
-| sanitize() produces the same folder name for two different categories | Acceptable — not addressed in this spec; categories with identical sanitized titles share a folder |
+| `category_folder=None` default breaks existing callers | All new params default to `None`; existing callers pass nothing and get current behaviour |
+| Path prefix filter matches too broadly (e.g. "Action" prefix matches "Action-Comedy" folder) | Use `os.sep`-terminated prefix (`str(prefix) + os.sep`) to avoid partial name matches |
+| Category title sanitizes to empty string | `sanitize()` only replaces specific unsafe chars; an all-unsafe title is pathological and not addressed here |
 
 ## Parallel vs Sequential
 
-- Phases 1 and 2 are independent and could be developed in parallel.
-- Phases 3, 4, 5 must follow Phase 1 and 2 in order.
+- Phase 1 and Phase 3 are independent and can be developed in parallel.
+- Phase 2 depends on Phase 1.
+- Phase 4 depends on Phases 2 and 3.
+- Phase 5 follows Phase 4.
 
 ## Verification Checkpoints
 
-- After Phase 1: `pytest tests/test_library_db.py -q` passes.
-- After Phase 2: `pytest tests/test_library_sync.py -q` passes (path function tests).
-- After Phase 3: `pytest tests/test_library_sync.py -q` passes (sync helper tests).
+- After Phase 1: `pytest tests/test_library_sync.py -q` passes (path function tests).
+- After Phase 2: `pytest tests/test_library_sync.py -q` passes (sync helper tests).
+- After Phase 3: `pytest tests/test_library_db.py -q` passes.
 - After Phase 4: `pytest tests/ -q` passes (full suite).
 - After Phase 5: `pytest tests/ -q` passes; docs reviewed.
