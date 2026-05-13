@@ -9,6 +9,7 @@ from ..db import (
     get_all_vod_categories,
     get_sync_state,
     get_vod_content,
+    get_vod_content_by_category,
     search_vod_content,
 )
 from ..vod_sync import run_portal_sync
@@ -26,6 +27,18 @@ def get_categories(request: Request):
 def delete_category(category_id: str, request: Request):
     if not delete_vod_category(request.app.state.db, category_id):
         raise HTTPException(status_code=404, detail="Category not found")
+
+
+@router.get("/categories/{category_id}/items")
+def get_category_items(
+    category_id: str,
+    request: Request,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+):
+    db = request.app.state.db
+    items, total = get_vod_content_by_category(db, category_id, page, page_size)
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/content")
@@ -133,16 +146,13 @@ def sync_status(request: Request):
 @router.get("/search")
 def search(
     request: Request,
-    query: str = Query(default=""),
+    query: str,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
     is_series: int | None = Query(default=None),
-    category_id: str | None = Query(default=None),
 ):
     db = request.app.state.db
-    if not query and not category_id:
-        raise HTTPException(status_code=400, detail="query or category_id required")
     if count_vod_content(db) == 0:
         raise HTTPException(status_code=503, detail="Portal content not yet synced")
-    items, total = search_vod_content(db, query, page, page_size, is_series, category_id)
+    items, total = search_vod_content(db, query, page, page_size, is_series)
     return {"items": items, "total": total, "page": page, "page_size": page_size}

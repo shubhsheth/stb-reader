@@ -58,6 +58,30 @@
     #search-btn { background: #3a3a3a; color: #e0e0e0; }
     #search-btn:hover:not(:disabled) { background: #484848; }
 
+    /* Nav tabs */
+    #nav {
+      display: flex;
+      gap: 0;
+      background: #151515;
+      border-bottom: 1px solid #222;
+    }
+
+    .nav-btn {
+      background: none;
+      color: #777;
+      border: none;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      padding: 0.6rem 1.5rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+
+    .nav-btn.active { color: #e0e0e0; border-bottom-color: #555; }
+    .nav-btn:hover:not(.active) { color: #bbb; }
+
     #filters {
       display: flex;
       gap: 0.4rem;
@@ -179,16 +203,35 @@
       display: none;
     }
 
-    #category-select {
-      padding: 0.3rem 0.6rem;
+    /* Categories page */
+    #cat-page { display: none; }
+
+    #cat-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 1.5rem;
+      background: #151515;
+      border-bottom: 1px solid #222;
+      flex-wrap: wrap;
+    }
+
+    #cat-back-btn {
       background: #252525;
+      color: #aaa;
       border: 1px solid #333;
-      border-radius: 4px;
-      color: #e0e0e0;
+      padding: 0.3rem 0.75rem;
       font-size: 0.8rem;
     }
 
-    #cat-actions { display: none; gap: 0.4rem; align-items: center; }
+    #cat-back-btn:hover { background: #2e2e2e; color: #ccc; }
+
+    #cat-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #e0e0e0;
+      flex: 1;
+    }
 
     .btn-cat {
       background: #252525;
@@ -199,9 +242,16 @@
     }
 
     .btn-cat:hover:not(:disabled) { background: #2e2e2e; color: #ccc; }
-
     .btn-cat-danger { background: #4a1a1a; color: #e07a7a; border-color: #662222; }
     .btn-cat-danger:hover:not(:disabled) { background: #552222; }
+
+    #cat-list {
+      padding: 0 1.5rem 2rem;
+    }
+
+    #cat-list table { margin-top: 0.5rem; }
+
+    .cat-auto-add { color: #7ae07a; font-size: 0.75rem; margin-left: 0.4rem; }
   </style>
 </head>
 <body>
@@ -214,33 +264,62 @@
   </form>
 </header>
 
-<div id="filters">
-  <button class="filter-btn active" data-filter="">All</button>
-  <button class="filter-btn" data-filter="0">Movies</button>
-  <button class="filter-btn" data-filter="1">Series</button>
-  <select id="category-select"><option value="">All Categories</option></select>
-  <div id="cat-actions">
+<div id="nav">
+  <button class="nav-btn active" data-page="search">Search</button>
+  <button class="nav-btn" data-page="categories">Categories</button>
+</div>
+
+<!-- Search page -->
+<div id="search-page">
+  <div id="filters">
+    <button class="filter-btn active" data-filter="">All</button>
+    <button class="filter-btn" data-filter="0">Movies</button>
+    <button class="filter-btn" data-filter="1">Series</button>
+  </div>
+
+  <div id="status-bar">
+    <div id="spinner"></div>
+    <span id="status-text"></span>
+  </div>
+
+  <div id="error-msg"></div>
+  <div id="results"></div>
+  <div id="no-results">No results found.</div>
+
+  <div id="pagination">
+    <button class="page-btn" id="prev-btn" disabled>&#8592; Prev</button>
+    <span id="page-info"></span>
+    <button class="page-btn" id="next-btn" disabled>Next &#8594;</button>
+  </div>
+</div>
+
+<!-- Categories page -->
+<div id="cat-page">
+  <!-- Toolbar shown when browsing a category's items -->
+  <div id="cat-toolbar" style="display:none">
+    <button id="cat-back-btn">&#8592; Back</button>
+    <span id="cat-title"></span>
     <button class="btn-cat" id="cat-add-all">Add All</button>
     <button class="btn-cat" id="cat-remove-all">Remove All</button>
     <button class="btn-cat" id="cat-sync">Sync</button>
     <button class="btn-cat btn-cat-danger" id="cat-delete">Delete Category</button>
   </div>
-</div>
 
-<div id="status-bar">
-  <div id="spinner"></div>
-  <span id="status-text"></span>
-</div>
+  <div id="cat-status-bar" style="padding:0.5rem 1.5rem;font-size:0.8rem;color:#666;min-height:1.8rem;display:flex;align-items:center;gap:0.75rem;">
+    <div id="cat-spinner" style="display:none;width:14px;height:14px;border:2px solid #444;border-top-color:#aaa;border-radius:50%;animation:spin 0.6s linear infinite;"></div>
+    <span id="cat-status-text"></span>
+  </div>
+  <div id="cat-error-msg" style="color:#e07070;font-size:0.85rem;padding:0.5rem 1.5rem;display:none;"></div>
 
-<div id="error-msg"></div>
+  <!-- Category list -->
+  <div id="cat-list"></div>
 
-<div id="results"></div>
-<div id="no-results">No results found.</div>
-
-<div id="pagination">
-  <button class="page-btn" id="prev-btn" disabled>&#8592; Prev</button>
-  <span id="page-info"></span>
-  <button class="page-btn" id="next-btn" disabled>Next &#8594;</button>
+  <!-- Category items pagination -->
+  <div id="cat-pagination" style="display:flex;align-items:center;gap:0.75rem;padding:1rem 1.5rem;font-size:0.85rem;color:#777;visibility:hidden;">
+    <button class="page-btn" id="cat-prev-btn" disabled>&#8592; Prev</button>
+    <span id="cat-page-info"></span>
+    <button class="page-btn" id="cat-next-btn" disabled>Next &#8594;</button>
+  </div>
 </div>
 
 <script>
@@ -248,12 +327,15 @@
 
   let state = {
     query: '',
-    filter: '',      // '' | '0' | '1'
-    category: '',    // category_id or ''
+    filter: '',
     page: 1,
     total: 0,
     libraryIds: new Set(),
     loading: false,
+    // category page state
+    catPage: 1,
+    catTotal: 0,
+    activeCat: null,   // {category_id, title, auto_add} or null
   };
 
   // ── API ──────────────────────────────────────────────────────────────────
@@ -275,10 +357,8 @@
   }
 
   async function searchVod(page = 1) {
-    const params = new URLSearchParams({ page, page_size: PAGE_SIZE });
-    if (state.query)    params.set('query', state.query);
+    const params = new URLSearchParams({ query: state.query, page, page_size: PAGE_SIZE });
     if (state.filter !== '') params.set('is_series', state.filter);
-    if (state.category) params.set('category_id', state.category);
     return apiFetch(`/vod/search?${params}`);
   }
 
@@ -292,23 +372,7 @@
     state.libraryIds.delete(contentId);
   }
 
-  async function loadCategories() {
-    const cats = await apiFetch('/vod/categories');
-    const sel = document.getElementById('category-select');
-    cats.forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c.category_id;
-      opt.textContent = c.auto_add ? `${c.title} ★` : c.title;
-      sel.appendChild(opt);
-    });
-  }
-
-  async function bulkAddCategory(id)    { return apiFetch(`/library/categories/${id}`, { method: 'POST' }); }
-  async function bulkRemoveCategory(id) { return apiFetch(`/library/categories/${id}`, { method: 'DELETE' }); }
-  async function syncCategory(id)       { return apiFetch(`/library/categories/${id}/sync`, { method: 'POST' }); }
-  async function deleteCategory(id)     { return apiFetch(`/vod/categories/${id}`, { method: 'DELETE' }); }
-
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ── Render (search page) ─────────────────────────────────────────────────
 
   function setLoading(on) {
     state.loading = on;
@@ -380,8 +444,9 @@
   }
 
   function updateRowButton(contentId, inLib) {
-    const row = document.querySelector(`tr[data-id="${contentId}"]`);
-    if (row) row.querySelector('td:last-child').innerHTML = renderButton(contentId, inLib);
+    document.querySelectorAll(`tr[data-id="${contentId}"] td:last-child`).forEach(td => {
+      td.innerHTML = renderButton(contentId, inLib);
+    });
   }
 
   function renderPagination() {
@@ -392,7 +457,6 @@
 
     const visible = state.total > 0;
     document.getElementById('pagination').style.visibility = visible ? 'visible' : 'hidden';
-
     if (!visible) return;
 
     prevBtn.disabled = state.page <= 1;
@@ -400,10 +464,10 @@
     info.textContent = `Page ${state.page} of ${totalPages} (${state.total} results)`;
   }
 
-  // ── Actions ──────────────────────────────────────────────────────────────
+  // ── Search actions ───────────────────────────────────────────────────────
 
   async function runSearch(page = 1) {
-    if (!state.query && !state.category) return;
+    if (!state.query) return;
     showError('');
     setLoading(true);
     showStatus('Searching…');
@@ -413,7 +477,7 @@
       state.total = data.total;
       renderResults(data.items);
       renderPagination();
-      showStatus(state.total ? '' : '');
+      showStatus('');
     } catch (err) {
       showError(err.message);
     } finally {
@@ -438,6 +502,169 @@
       showError(err.message);
       if (btn) btn.disabled = false;
     }
+  }
+
+  // ── Categories page ──────────────────────────────────────────────────────
+
+  function catShowError(msg) {
+    const el = document.getElementById('cat-error-msg');
+    el.textContent = msg;
+    el.style.display = msg ? 'block' : 'none';
+  }
+
+  function catShowStatus(text) {
+    document.getElementById('cat-status-text').textContent = text;
+  }
+
+  function catSetLoading(on) {
+    document.getElementById('cat-spinner').style.display = on ? 'block' : 'none';
+  }
+
+  async function loadCategoryList() {
+    catSetLoading(true);
+    try {
+      const cats = await apiFetch('/vod/categories');
+      renderCategoryList(cats);
+    } catch (err) {
+      catShowError(err.message);
+    } finally {
+      catSetLoading(false);
+    }
+  }
+
+  function renderCategoryList(cats) {
+    const container = document.getElementById('cat-list');
+    document.getElementById('cat-toolbar').style.display = 'none';
+    document.getElementById('cat-pagination').style.visibility = 'hidden';
+
+    if (cats.length === 0) {
+      container.innerHTML = '<p style="padding:2rem 1.5rem;color:#555">No categories synced yet.</p>';
+      return;
+    }
+
+    const rows = cats.map(c => `
+      <tr>
+        <td class="title">
+          ${esc(c.title)}
+          ${c.auto_add ? '<span class="cat-auto-add" title="Auto-add enabled">&#9733;</span>' : ''}
+        </td>
+        <td>
+          <button class="btn-cat" data-cat-browse="${esc(c.category_id)}" data-cat-title="${esc(c.title)}">Browse</button>
+        </td>
+      </tr>`).join('');
+
+    container.innerHTML = `
+      <table style="margin:0.5rem 1.5rem;width:calc(100% - 3rem)">
+        <thead><tr><th>Category</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  async function openCategory(categoryId, title) {
+    state.activeCat = { category_id: categoryId, title };
+    document.getElementById('cat-title').textContent = title;
+    document.getElementById('cat-toolbar').style.display = 'flex';
+    catShowError('');
+    await loadCategoryItems(1);
+  }
+
+  async function loadCategoryItems(page) {
+    catSetLoading(true);
+    try {
+      const params = new URLSearchParams({ page, page_size: PAGE_SIZE });
+      const data = await apiFetch(`/vod/categories/${state.activeCat.category_id}/items?${params}`);
+      state.catPage = page;
+      state.catTotal = data.total;
+      renderCategoryItems(data.items);
+      renderCatPagination();
+    } catch (err) {
+      catShowError(err.message);
+    } finally {
+      catSetLoading(false);
+    }
+  }
+
+  function renderCategoryItems(items) {
+    const container = document.getElementById('cat-list');
+
+    if (items.length === 0) {
+      container.innerHTML = '<p style="padding:2rem 1.5rem;color:#555">No items in this category.</p>';
+      return;
+    }
+
+    const rows = items.map(item => {
+      const inLib = item.in_library === 1 || state.libraryIds.has(item.content_id);
+      const badge = item.is_series
+        ? '<span class="badge badge-series">Series</span>'
+        : '<span class="badge badge-movie">Movie</span>';
+      return `<tr data-id="${item.content_id}">
+        <td class="poster"><img src="/vod/content/${item.content_id}/screenshot" alt="" onerror="this.style.display='none'"></td>
+        <td class="title">${esc(item.name)}</td>
+        <td>${badge}</td>
+        <td>${esc(item.year ?? '')}</td>
+        <td>${renderButton(item.content_id, inLib)}</td>
+      </tr>`;
+    }).join('');
+
+    container.innerHTML = `
+      <table style="margin:0 1.5rem;width:calc(100% - 3rem)">
+        <thead><tr><th></th><th>Title</th><th>Type</th><th>Year</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  function renderCatPagination() {
+    const totalPages = Math.ceil(state.catTotal / PAGE_SIZE);
+    const pag = document.getElementById('cat-pagination');
+    pag.style.visibility = state.catTotal > 0 ? 'visible' : 'hidden';
+    document.getElementById('cat-prev-btn').disabled = state.catPage <= 1;
+    document.getElementById('cat-next-btn').disabled = state.catPage >= totalPages;
+    document.getElementById('cat-page-info').textContent =
+      `Page ${state.catPage} of ${totalPages} (${state.catTotal} items)`;
+  }
+
+  async function handleCatBulkAction(action) {
+    const id = state.activeCat.category_id;
+    catShowError('');
+    const btns = document.querySelectorAll('#cat-toolbar button:not(#cat-back-btn)');
+    btns.forEach(b => b.disabled = true);
+    try {
+      if (action === 'add-all') {
+        const r = await apiFetch(`/library/categories/${id}`, { method: 'POST' });
+        catShowStatus(`Added ${r.added} items`);
+        await loadLibrary();
+        await loadCategoryItems(state.catPage);
+      } else if (action === 'remove-all') {
+        const r = await apiFetch(`/library/categories/${id}`, { method: 'DELETE' });
+        catShowStatus(`Removed ${r.removed} items`);
+        await loadLibrary();
+        await loadCategoryItems(state.catPage);
+      } else if (action === 'sync') {
+        await apiFetch(`/library/categories/${id}/sync`, { method: 'POST' });
+        catShowStatus('Sync started');
+      } else if (action === 'delete') {
+        await apiFetch(`/vod/categories/${id}`, { method: 'DELETE' });
+        state.activeCat = null;
+        catShowStatus('Category deleted');
+        await loadCategoryList();
+      }
+    } catch (err) {
+      catShowError(err.message);
+    } finally {
+      btns.forEach(b => b.disabled = false);
+    }
+  }
+
+  // ── Page navigation ──────────────────────────────────────────────────────
+
+  function showPage(name) {
+    document.getElementById('search-page').style.display = name === 'search' ? '' : 'none';
+    document.getElementById('cat-page').style.display = name === 'categories' ? '' : 'none';
+    document.getElementById('search-form').style.display = name === 'search' ? '' : 'none';
+    document.querySelectorAll('.nav-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.page === name);
+    });
+    if (name === 'categories' && !state.activeCat) loadCategoryList();
   }
 
   // ── Event wiring ─────────────────────────────────────────────────────────
@@ -472,50 +699,41 @@
     if (state.page < totalPages) runSearch(state.page + 1);
   });
 
-  document.getElementById('category-select').addEventListener('change', e => {
-    state.category = e.target.value;
-    document.getElementById('cat-actions').style.display = state.category ? 'flex' : 'none';
-    runSearch(1);
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => showPage(btn.dataset.page));
   });
 
-  async function handleCatAction(action) {
-    showError('');
-    const btns = document.querySelectorAll('#cat-actions button');
-    btns.forEach(b => b.disabled = true);
-    try {
-      if (action === 'add-all') {
-        const r = await bulkAddCategory(state.category);
-        showStatus(`Added ${r.added} items`);
-        await loadLibrary();
-        if (state.query || state.category) runSearch(1);
-      } else if (action === 'remove-all') {
-        const r = await bulkRemoveCategory(state.category);
-        showStatus(`Removed ${r.removed} items`);
-        await loadLibrary();
-        if (state.query || state.category) runSearch(1);
-      } else if (action === 'sync') {
-        await syncCategory(state.category);
-        showStatus('Sync started');
-      } else if (action === 'delete') {
-        await deleteCategory(state.category);
-        document.querySelector(`#category-select option[value="${state.category}"]`).remove();
-        state.category = '';
-        document.getElementById('category-select').value = '';
-        document.getElementById('cat-actions').style.display = 'none';
-        showStatus('Category deleted');
-        runSearch(1);
-      }
-    } catch (err) {
-      showError(err.message);
-    } finally {
-      btns.forEach(b => b.disabled = false);
+  document.getElementById('cat-list').addEventListener('click', e => {
+    // Per-item add/remove inside category items view
+    const actionBtn = e.target.closest('button[data-action]');
+    if (actionBtn) {
+      handleLibraryAction(actionBtn.dataset.id, actionBtn.dataset.action);
+      return;
     }
-  }
+    // Browse a category
+    const browseBtn = e.target.closest('button[data-cat-browse]');
+    if (browseBtn) openCategory(browseBtn.dataset.catBrowse, browseBtn.dataset.catTitle);
+  });
 
-  ['cat-add-all', 'cat-remove-all', 'cat-sync', 'cat-delete'].forEach(id => {
-    document.getElementById(id).addEventListener('click', () =>
-      handleCatAction(id.replace('cat-', ''))
-    );
+  document.getElementById('cat-back-btn').addEventListener('click', () => {
+    state.activeCat = null;
+    catShowError('');
+    catShowStatus('');
+    loadCategoryList();
+  });
+
+  document.getElementById('cat-add-all').addEventListener('click', () => handleCatBulkAction('add-all'));
+  document.getElementById('cat-remove-all').addEventListener('click', () => handleCatBulkAction('remove-all'));
+  document.getElementById('cat-sync').addEventListener('click', () => handleCatBulkAction('sync'));
+  document.getElementById('cat-delete').addEventListener('click', () => handleCatBulkAction('delete'));
+
+  document.getElementById('cat-prev-btn').addEventListener('click', () => {
+    if (state.catPage > 1) loadCategoryItems(state.catPage - 1);
+  });
+
+  document.getElementById('cat-next-btn').addEventListener('click', () => {
+    const totalPages = Math.ceil(state.catTotal / PAGE_SIZE);
+    if (state.catPage < totalPages) loadCategoryItems(state.catPage + 1);
   });
 
   // ── Init ─────────────────────────────────────────────────────────────────
@@ -527,7 +745,6 @@
   document.getElementById('pagination').style.visibility = 'hidden';
 
   loadLibrary().catch(() => {});
-  loadCategories().catch(() => {});
 </script>
 </body>
 </html>

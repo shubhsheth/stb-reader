@@ -201,51 +201,47 @@ def search_vod_content(
     page: int,
     page_size: int,
     is_series: int | None,
-    category_id: str | None = None,
 ) -> tuple[list[dict], int]:
     series_filter = "" if is_series is None else f"AND c.is_series = {int(is_series)}"
+    # Escape double-quotes in FTS query
+    fts_query = query.replace('"', '""')
+    count_sql = f"""
+        SELECT count(*) FROM vod_content_fts f
+        JOIN vod_content c ON c.content_id = f.content_id
+        WHERE vod_content_fts MATCH ? {series_filter}
+    """
+    total = db.execute(count_sql, (fts_query,)).fetchone()[0]
+    rows_sql = f"""
+        SELECT c.* FROM vod_content_fts f
+        JOIN vod_content c ON c.content_id = f.content_id
+        WHERE vod_content_fts MATCH ? {series_filter}
+        ORDER BY rank
+        LIMIT ? OFFSET ?
+    """
     offset = (page - 1) * page_size
+    rows = db.execute(rows_sql, (fts_query, page_size, offset)).fetchall()
+    return [dict(r) for r in rows], total
 
-    if query:
-        fts_query = query.replace('"', '""')
-        if category_id:
-            cat_join = "JOIN vod_content_category cc ON cc.content_id = c.content_id"
-            cat_filter = "AND cc.category_id = ?"
-            count_params: tuple = (fts_query, category_id)
-            rows_params: tuple = (fts_query, category_id, page_size, offset)
-        else:
-            cat_join = cat_filter = ""
-            count_params = (fts_query,)
-            rows_params = (fts_query, page_size, offset)
-        count_sql = (
-            f"SELECT count(*) FROM vod_content_fts f"
-            f" JOIN vod_content c ON c.content_id = f.content_id {cat_join}"
-            f" WHERE vod_content_fts MATCH ? {cat_filter} {series_filter}"
-        )
-        rows_sql = (
-            f"SELECT c.* FROM vod_content_fts f"
-            f" JOIN vod_content c ON c.content_id = f.content_id {cat_join}"
-            f" WHERE vod_content_fts MATCH ? {cat_filter} {series_filter}"
-            f" ORDER BY rank LIMIT ? OFFSET ?"
-        )
-    else:
-        # Category browse — no FTS required
-        count_params = (category_id,)
-        rows_params = (category_id, page_size, offset)
-        count_sql = (
-            f"SELECT count(*) FROM vod_content c"
-            f" JOIN vod_content_category cc ON cc.content_id = c.content_id"
-            f" WHERE cc.category_id = ? {series_filter}"
-        )
-        rows_sql = (
-            f"SELECT c.* FROM vod_content c"
-            f" JOIN vod_content_category cc ON cc.content_id = c.content_id"
-            f" WHERE cc.category_id = ? {series_filter}"
-            f" ORDER BY c.name LIMIT ? OFFSET ?"
-        )
 
-    total = db.execute(count_sql, count_params).fetchone()[0]
-    rows = db.execute(rows_sql, rows_params).fetchall()
+def get_vod_content_by_category(
+    db: sqlite3.Connection,
+    category_id: str,
+    page: int,
+    page_size: int,
+) -> tuple[list[dict], int]:
+    total = db.execute(
+        "SELECT count(*) FROM vod_content c"
+        " JOIN vod_content_category cc ON cc.content_id = c.content_id"
+        " WHERE cc.category_id = ?",
+        (category_id,),
+    ).fetchone()[0]
+    offset = (page - 1) * page_size
+    rows = db.execute(
+        "SELECT c.* FROM vod_content c"
+        " JOIN vod_content_category cc ON cc.content_id = c.content_id"
+        " WHERE cc.category_id = ? ORDER BY c.name LIMIT ? OFFSET ?",
+        (category_id, page_size, offset),
+    ).fetchall()
     return [dict(r) for r in rows], total
 
 
