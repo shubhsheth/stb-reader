@@ -11,10 +11,13 @@ Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-s
 Whenever asked to build, implement, add, or create a new feature, ALWAYS invoke these skills in sequence before writing any code:
 
 1. `/planning-and-task-breakdown` — decompose the request into clear, ordered tasks
+   → **Stop and wait for human review before continuing.**
 2. `/spec-driven-development` — write requirements and a design spec for the feature
+   → **Stop and wait for human review before continuing.**
 3. `/incremental-implementation` — implement task-by-task, verifying each step
+   → **Stop and wait for human review before continuing.**
 
-Do not skip any step even if the requirements seem clear.
+Do not proceed past any step until the human explicitly approves.
 
 ### Spec File Naming & Structure
 
