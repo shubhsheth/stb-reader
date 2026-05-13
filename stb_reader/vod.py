@@ -1,4 +1,5 @@
 from __future__ import annotations
+import re
 from typing import TYPE_CHECKING
 from .models import Category, Content, Season, Episode, EpisodeFile, PagedResult
 from .exceptions import NotFoundError, STBError, StreamError
@@ -13,6 +14,8 @@ class VODService:
     def __init__(self, session: "STBSession") -> None:
         self._s = session
 
+    _ADULT_TERMS = re.compile(r"adult|18\+", re.IGNORECASE)
+
     def get_categories(self) -> list[Category]:
         data = self._s.get("vod", "get_categories")
         return [
@@ -23,6 +26,7 @@ class VODService:
                 censored=bool(c.get("censored", False)),
             )
             for c in _as_list(data)
+            if not self._ADULT_TERMS.search(c.get("title", ""))
         ]
 
     def get_content(
