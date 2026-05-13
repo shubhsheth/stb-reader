@@ -41,6 +41,8 @@ add content one item at a time.
 - **FR-3** `POST /library/category/{category_id}` — idempotent add-or-sync for an entire category.
   - Looks up all content IDs linked to `category_id` in the local `vod_content_category` table.
   - For each content ID, applies the same add-or-sync logic as FR-1.
+  - Marks the category itself as in-library (`in_library = 1`, `added_at` set on first add) in
+    `vod_categories`, mirroring how individual content items are tracked in `vod_content`.
   - Returns `404` if `category_id` is not found in the local `vod_categories` cache.
   - Returns `202 Accepted`; all file-writing happens in a background task.
   - Content that belongs to multiple categories is unaffected by the category-level call
@@ -50,13 +52,18 @@ add content one item at a time.
   - Looks up all content IDs linked to `category_id`.
   - Removes every one of those items from the library regardless of whether they belong to other
     categories.
+  - Clears the category's library flags (`in_library = 0`, `added_at = NULL`) in `vod_categories`.
   - Returns `404` if `category_id` is not found in the local `vod_categories` cache.
   - Returns `204 No Content` on success (even if no items were in the library).
 
-- **FR-5** Existing `POST /library/sync` (sync-all) is **preserved** as-is. It is unrelated to
+- **FR-5-new** `vod_categories` schema — two new columns added via migration:
+  - `in_library INTEGER NOT NULL DEFAULT 0`
+  - `added_at TEXT` (ISO 8601 UTC, NULL until first add)
+
+- **FR-6** Existing `POST /library/sync` (sync-all) is **preserved** as-is. It is unrelated to
   the category endpoints and should continue to work.
 
-- **FR-6** Old endpoints `POST /library/add/{content_id}` and `POST /library/sync/{content_id}`
+- **FR-7** Old endpoints `POST /library/add/{content_id}` and `POST /library/sync/{content_id}`
   are **removed** and replaced entirely by `POST /library/content/{content_id}`.
   `DELETE /library/{content_id}` is **removed** and replaced by `DELETE /library/content/{content_id}`.
 
@@ -188,12 +195,16 @@ async def upsert_library_content(content_id: str, request: Request):
 4. `POST /library/category/{category_id}` fans out to every content item in the category,
    applying add-or-sync to each.
 5. `DELETE /library/category/{category_id}` removes every item in that category from the
-   library, regardless of membership in other categories.
-6. All four new endpoints return `404` when given an unknown ID.
-7. `POST /library/sync` (sync-all) continues to work correctly after the refactor.
-8. Old endpoints (`/library/add/`, `/library/sync/{id}`, `DELETE /library/{id}`) return `404`
-   (i.e. they no longer exist).
-9. All existing and new tests pass (`pytest tests/ -q` exits 0).
+   library, regardless of membership in other categories, and clears the category's library flags.
+6. After `POST /library/category/{category_id}`, the row in `vod_categories` has `in_library = 1`
+   and a non-null `added_at`.
+7. After `DELETE /library/category/{category_id}`, the row in `vod_categories` has
+   `in_library = 0` and `added_at = NULL`.
+8. All four new endpoints return `404` when given an unknown ID.
+9. `POST /library/sync` (sync-all) continues to work correctly after the refactor.
+10. Old endpoints (`/library/add/`, `/library/sync/{id}`, `DELETE /library/{id}`) return `404`
+    (i.e. they no longer exist).
+11. All existing and new tests pass (`pytest tests/ -q` exits 0).
 
 ---
 

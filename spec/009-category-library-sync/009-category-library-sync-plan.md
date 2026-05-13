@@ -10,8 +10,8 @@ test_library_db.py  test_library_sync.py  test_library_routes.py
                                           docs/library.md
 ```
 
-Everything is sequential: the DB helpers must exist before the sync helper can call them,
-and the sync helper must exist before routes can dispatch to it.
+Everything is sequential: the DB helpers (including migration) must exist before the sync helper
+can call them, and the sync helper must exist before routes can dispatch to it.
 
 ---
 
@@ -22,24 +22,36 @@ and the sync helper must exist before routes can dispatch to it.
 | Removing old endpoints breaks existing tests | Update route tests in the same commit as the route changes (Phase 3) |
 | `add_content` in `sync.py` already calls `add_to_library` internally; double-calling is safe (idempotent UPDATE) but must be verified | Cover the add-then-add-again path in sync helper tests |
 | Category fan-out enqueues N background tasks at once; could flood the portal | Delay is already threaded through all callers; no additional mitigation needed for this spec |
+| Migration adds columns to `vod_categories`; existing test DB fixtures may not have them | `init_db(":memory:")` in tests always runs all migrations, so in-memory fixtures are fine |
 
 ---
 
 ## Implementation Order
 
-### Phase 1 — DB helpers (`server/db.py` + `tests/test_library_db.py`)
+### Phase 1 — DB helpers + migration (`server/db.py` + `tests/test_library_db.py`)
 
-Add two read-only query functions. No schema changes; both operate on existing tables.
+**Schema migration** — append two `_add_col` steps to the `MIGRATIONS` list in `db.py`:
+- `_add_col("vod_categories", "in_library", "INTEGER NOT NULL DEFAULT 0")`
+- `_add_col("vod_categories", "added_at", "TEXT")`
+
+This follows the existing append-only migration pattern. No data backfill needed; default 0 / NULL is correct for existing rows.
 
 **`get_category(db, category_id) -> dict | None`**
 - `SELECT * FROM vod_categories WHERE category_id = ?`
-- Returns `dict(row)` or `None`
+- Returns `dict(row)` or `None`; used for 404 checks in routes
 
 **`get_content_ids_for_category(db, category_id) -> list[str]`**
 - `SELECT content_id FROM vod_content_category WHERE category_id = ?`
 - Returns a list of content_id strings (may be empty)
 
-Verify: new unit tests in `test_library_db.py` cover both functions.
+**`add_category_to_library(db, category_id) -> None`**
+- `UPDATE vod_categories SET in_library = 1, added_at = <now> WHERE category_id = ? AND in_library = 0`
+- Only sets `added_at` on first add (guards with `AND in_library = 0`), mirroring how `add_to_library` works for content
+
+**`remove_category_from_library(db, category_id) -> None`**
+- `UPDATE vod_categories SET in_library = 0, added_at = NULL WHERE category_id = ?`
+
+Verify: new unit tests in `test_library_db.py` cover all four new functions plus migration.
 Check: `pytest tests/test_library_db.py -q` passes.
 
 ---
@@ -91,6 +103,7 @@ Replace all three old handlers and add two new category handlers. `GET /library`
 
 `POST /library/category/{category_id}` (FR-3)
 - 404 if `get_category` returns None
+- Call `add_category_to_library` synchronously (fast, sets the flag before background work starts)
 - Fetch `get_content_ids_for_category`
 - Enqueue one `add_or_sync_content` background task per content_id
 - Return 202
@@ -100,6 +113,7 @@ Replace all three old handlers and add two new category handlers. `GET /library`
 - Fetch `get_content_ids_for_category`
 - Call `delete_content` for each content_id that is currently in the library
   (skip items not in library to avoid errors from `delete_content`'s path cleanup)
+- Call `remove_category_from_library` to clear the category's flags
 - Return 204
 
 Update `test_library_routes.py`:
