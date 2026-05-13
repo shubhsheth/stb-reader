@@ -389,7 +389,7 @@ def add_strm_file(
     strm_path: str,
 ) -> None:
     db.execute(
-        "INSERT INTO strm_files (content_id, season_id, episode_id, file_id, strm_path, created_at)"
+        "INSERT OR IGNORE INTO strm_files (content_id, season_id, episode_id, file_id, strm_path, created_at)"
         " VALUES (?, ?, ?, ?, ?, ?)",
         (content_id, season_id, episode_id, file_id, strm_path, _now()),
     )
