@@ -9,6 +9,7 @@ from ..db import (
     get_library_item,
     get_library_items,
     get_vod_content,
+    list_categories,
     remove_category_from_library,
 )
 from ..sync import add_or_sync_content, delete_content, sync_all
@@ -63,6 +64,11 @@ def remove_library_category(category_id: str, request: Request):
         if get_library_item(db, content_id) is not None:
             delete_content(db, content_id)
     remove_category_from_library(db, category_id)
+
+
+@router.get("/library/categories")
+def list_library_categories(request: Request):
+    return list_categories(request.app.state.db)
 
 
 @router.get("/library")
