@@ -174,6 +174,18 @@ class TestCategoryUpsert:
         resp = tc.post("/library/category/unknown")
         assert resp.status_code == 404
 
+    def test_category_sync_passes_category_folder_to_add_or_sync(self, library_client):
+        tc, _, db, _ = library_client
+        upsert_vod_category(db, "cat1", "Action Movies", "")
+        upsert_vod_content(db, _vod_row("m1", "Die Hard", "1988"))
+        db.commit()
+        upsert_vod_content_category(db, "m1", "cat1")
+        db.commit()
+        calls = []
+        with patch("server.routes.library.add_or_sync_content", side_effect=lambda *a, **kw: calls.append((a, kw)) or 1):
+            tc.post("/library/category/cat1")
+        assert any(kw.get("category_folder") == "Action Movies" or (len(a) > 6 and a[6] == "Action Movies") for a, kw in calls)
+
     def test_enqueues_task_for_each_content_item(self, library_client):
         tc, _, db, _ = library_client
         upsert_vod_category(db, "cat1", "Action", "")
@@ -195,7 +207,7 @@ class TestCategoryDelete:
         resp = tc.delete("/library/category/cat1")
         assert resp.status_code == 204
 
-    def test_removes_linked_content_from_library(self, library_client):
+    def test_removes_only_category_files_and_clears_library_flag(self, library_client):
         from server.db import get_library_item, get_category
         tc, _, db, tmp_path = library_client
         upsert_vod_category(db, "cat1", "Action", "")
@@ -204,7 +216,8 @@ class TestCategoryDelete:
         upsert_vod_content_category(db, "m1", "cat1")
         db.commit()
         add_to_library(db, "m1")
-        strm = tmp_path / "Movies" / "Movie (2023)" / "Movie (2023).strm"
+        # File placed under the category folder
+        strm = tmp_path / "Action" / "Movies" / "Movie (2023)" / "Movie (2023).strm"
         strm.parent.mkdir(parents=True, exist_ok=True)
         strm.write_text("http://x\n")
         add_strm_file(db, "m1", None, None, "m1", str(strm))
@@ -214,6 +227,27 @@ class TestCategoryDelete:
         assert get_library_item(db, "m1") is None
         assert not strm.exists()
         assert get_category(db, "cat1")["in_library"] == 0
+
+    def test_single_add_file_survives_category_delete(self, library_client):
+        from server.db import get_library_item
+        tc, _, db, tmp_path = library_client
+        upsert_vod_category(db, "cat1", "Action", "")
+        upsert_vod_content(db, _vod_row("m1", "Movie", "2023"))
+        db.commit()
+        upsert_vod_content_category(db, "m1", "cat1")
+        db.commit()
+        add_to_library(db, "m1")
+        # File placed via single-add (root folder, no category prefix)
+        root_strm = tmp_path / "Movies" / "Movie (2023)" / "Movie (2023).strm"
+        root_strm.parent.mkdir(parents=True, exist_ok=True)
+        root_strm.write_text("http://x\n")
+        add_strm_file(db, "m1", None, None, "m1", str(root_strm))
+
+        resp = tc.delete("/library/category/cat1")
+        assert resp.status_code == 204
+        # Content still in library — its root strm file was not deleted
+        assert get_library_item(db, "m1") is not None
+        assert root_strm.exists()
 
     def test_returns_404_for_unknown_category(self, library_client):
         tc, _, db, _ = library_client

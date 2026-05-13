@@ -25,10 +25,13 @@ def parse_season_num(season_name: str, fallback: int) -> int:
     return int(m.group()) if m else fallback
 
 
-def movie_strm_path(output_dir: str, name: str, year: str) -> Path:
+def movie_strm_path(
+    output_dir: str, name: str, year: str, category_folder: str | None = None
+) -> Path:
     s = sanitize(name)
     folder = f"{s} ({year})"
-    return Path(output_dir) / "Movies" / folder / f"{folder}.strm"
+    base = Path(output_dir) / category_folder if category_folder else Path(output_dir)
+    return base / "Movies" / folder / f"{folder}.strm"
 
 
 def episode_strm_path(
@@ -38,13 +41,15 @@ def episode_strm_path(
     season_num: int,
     ep_num: int,
     ep_name: str,
+    category_folder: str | None = None,
 ) -> Path:
     sname = sanitize(name)
     sep_name = sanitize(ep_name)
     show_folder = f"{sname} ({year})"
     season_folder = f"Season {season_num:02d}"
     filename = f"{show_folder} - S{season_num:02d}E{ep_num:02d} - {sep_name}.strm"
-    return Path(output_dir) / "TV" / show_folder / season_folder / filename
+    base = Path(output_dir) / category_folder if category_folder else Path(output_dir)
+    return base / "TV" / show_folder / season_folder / filename
 
 
 def write_strm(path: Path, url: str) -> None:
@@ -61,6 +66,7 @@ def _write_series_strm_files(
     name: str,
     year: str,
     delay_s: float = 0,
+    category_folder: str | None = None,
 ) -> int:
     count = 0
     seasons = vod.get_seasons(content_id)
@@ -78,7 +84,9 @@ def _write_series_strm_files(
                 ep_num = int(episode.series_number) or (e_idx + 1)
             except (ValueError, TypeError):
                 ep_num = e_idx + 1
-            path = episode_strm_path(output_dir, name, year, season_num, ep_num, episode.name)
+            path = episode_strm_path(
+                output_dir, name, year, season_num, ep_num, episode.name, category_folder
+            )
             url = (
                 f"{server_base}/vod/content/{content_id}"
                 f"/seasons/{season.id}/episodes/{episode.id}/files/{file.id}/stream"
@@ -96,6 +104,7 @@ def add_content(
     server_base: str,
     content_id: str,
     delay_s: float = 0,
+    category_folder: str | None = None,
 ) -> int:
     """Add content_id to library (must already exist in vod_content). Returns strm count."""
     item = get_vod_content(db, content_id)
@@ -104,12 +113,14 @@ def add_content(
     add_to_library(db, content_id)
     name, year, is_series = item["name"], item["year"], bool(item["is_series"])
     if not is_series:
-        path = movie_strm_path(output_dir, name, year)
+        path = movie_strm_path(output_dir, name, year, category_folder)
         url = f"{server_base}/vod/content/{content_id}/stream"
         write_strm(path, url)
         add_strm_file(db, content_id, None, None, content_id, str(path))
         return 1
-    return _write_series_strm_files(db, vod, output_dir, server_base, content_id, name, year, delay_s)
+    return _write_series_strm_files(
+        db, vod, output_dir, server_base, content_id, name, year, delay_s, category_folder
+    )
 
 
 def sync_item(
@@ -119,12 +130,14 @@ def sync_item(
     server_base: str,
     content_id: str,
     delay_s: float = 0,
+    category_folder: str | None = None,
 ) -> int:
     item = get_library_item(db, content_id)
     if item is None or not item["is_series"]:
         return 0
     count = _write_series_strm_files(
-        db, vod, output_dir, server_base, content_id, item["name"], item["year"], delay_s
+        db, vod, output_dir, server_base, content_id, item["name"], item["year"], delay_s,
+        category_folder
     )
     set_last_synced(db, content_id)
     return count
@@ -150,10 +163,11 @@ def add_or_sync_content(
     server_base: str,
     content_id: str,
     delay_s: float = 0,
+    category_folder: str | None = None,
 ) -> int:
     if get_library_item(db, content_id) is None:
-        return add_content(db, vod, output_dir, server_base, content_id, delay_s)
-    return sync_item(db, vod, output_dir, server_base, content_id, delay_s)
+        return add_content(db, vod, output_dir, server_base, content_id, delay_s, category_folder)
+    return sync_item(db, vod, output_dir, server_base, content_id, delay_s, category_folder)
 
 
 def delete_content(db: sqlite3.Connection, content_id: str) -> None:

@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -394,6 +395,31 @@ def add_strm_file(
         (content_id, season_id, episode_id, file_id, strm_path, _now()),
     )
     db.commit()
+
+
+def remove_category_strm_files(
+    db: sqlite3.Connection, content_ids: list[str], path_prefix: str
+) -> list[str]:
+    """Delete strm_files rows for content_ids whose path starts with path_prefix.
+
+    Returns deleted strm_path values for disk cleanup. Rows outside the prefix are untouched.
+    """
+    if not content_ids:
+        return []
+    # Trailing sep prevents "Action" from matching "Action-Comedy"
+    prefix_match = path_prefix + os.sep
+    placeholders = ",".join("?" * len(content_ids))
+    rows = db.execute(
+        f"SELECT id, strm_path FROM strm_files WHERE content_id IN ({placeholders})",
+        content_ids,
+    ).fetchall()
+    to_delete = [r for r in rows if r[1].startswith(prefix_match)]
+    if to_delete:
+        ids = [r[0] for r in to_delete]
+        id_placeholders = ",".join("?" * len(ids))
+        db.execute(f"DELETE FROM strm_files WHERE id IN ({id_placeholders})", ids)
+        db.commit()
+    return [r[1] for r in to_delete]
 
 
 def get_strm_files(db: sqlite3.Connection, content_id: str) -> list[dict]:

@@ -1,5 +1,7 @@
 import pytest
 import sqlite3
+import os
+
 from server.db import (
     init_db,
     add_to_library,
@@ -20,6 +22,7 @@ from server.db import (
     get_content_ids_for_category,
     add_category_to_library,
     remove_category_from_library,
+    remove_category_strm_files,
 )
 
 
@@ -290,6 +293,44 @@ class TestAddCategoryToLibrary:
         first_added_at = get_category(db, "cat1")["added_at"]
         add_category_to_library(db, "cat1")
         assert get_category(db, "cat1")["added_at"] == first_added_at
+
+
+class TestRemoveCategoryStrmFiles:
+    def test_removes_only_prefixed_rows(self, db, tmp_path):
+        upsert_vod_content(db, _vod_row("c1"))
+        db.commit()
+        add_to_library(db, "c1")
+        prefix = str(tmp_path / "Action")
+        cat_path = str(tmp_path / "Action" / "Movies" / "x.strm")
+        root_path = str(tmp_path / "Movies" / "x.strm")
+        add_strm_file(db, "c1", None, None, "f1", cat_path)
+        add_strm_file(db, "c1", None, None, "f2", root_path)
+
+        deleted = remove_category_strm_files(db, ["c1"], prefix)
+
+        assert deleted == [cat_path]
+        remaining = db.execute(
+            "SELECT strm_path FROM strm_files WHERE content_id='c1'"
+        ).fetchall()
+        assert [r[0] for r in remaining] == [root_path]
+
+    def test_no_partial_folder_name_match(self, db, tmp_path):
+        upsert_vod_content(db, _vod_row("c1"))
+        db.commit()
+        add_to_library(db, "c1")
+        prefix = str(tmp_path / "Action")
+        # "Action-Comedy" must not be matched by prefix "Action"
+        wrong_path = str(tmp_path / "Action-Comedy" / "Movies" / "x.strm")
+        add_strm_file(db, "c1", None, None, "f1", wrong_path)
+
+        deleted = remove_category_strm_files(db, ["c1"], prefix)
+
+        assert deleted == []
+        count = db.execute("SELECT count(*) FROM strm_files").fetchone()[0]
+        assert count == 1
+
+    def test_returns_empty_for_empty_content_ids(self, db):
+        assert remove_category_strm_files(db, [], "/some/prefix") == []
 
 
 class TestRemoveCategoryFromLibrary:
