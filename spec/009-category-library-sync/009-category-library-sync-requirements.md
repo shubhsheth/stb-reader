@@ -46,12 +46,12 @@ add content one item at a time.
   - Content that belongs to multiple categories is unaffected by the category-level call
     (each item is processed independently; being in another category is irrelevant here).
 
-- **FR-4** `DELETE /library/category/{category_id}` — remove all content exclusive to this category.
+- **FR-4** `DELETE /library/category/{category_id}` — remove all content in this category.
   - Looks up all content IDs linked to `category_id`.
-  - For each content ID, removes it from the library **only if** it does not also belong to any
-    other category that has at least one content item still in the library.
+  - Removes every one of those items from the library regardless of whether they belong to other
+    categories.
   - Returns `404` if `category_id` is not found in the local `vod_categories` cache.
-  - Returns `204 No Content` on success (even if no items were removed).
+  - Returns `204 No Content` on success (even if no items were in the library).
 
 - **FR-5** Existing `POST /library/sync` (sync-all) is **preserved** as-is. It is unrelated to
   the category endpoints and should continue to work.
@@ -87,9 +87,8 @@ add content one item at a time.
 
 - `vod_content_category` is populated by the existing portal sync and is considered the source
   of truth for which content belongs to which category.
-- The "exclusive to this category" check in FR-4 is based on the library state at delete time,
-  not on portal category membership. If content is in the library but assigned to two categories,
-  deleting one category leaves the content in the library.
+- `DELETE /library/category` removes all linked items unconditionally; shared membership in
+  other categories does not protect an item from removal.
 - Background task errors (file-write failures, portal timeouts) are handled the same way as the
   existing `add_content` / `sync_item` helpers — they surface in server logs but do not
   propagate as HTTP errors to the caller (already the established pattern).
@@ -188,8 +187,8 @@ async def upsert_library_content(content_id: str, request: Request):
    `GET /library` does not include it.
 4. `POST /library/category/{category_id}` fans out to every content item in the category,
    applying add-or-sync to each.
-5. `DELETE /library/category/{category_id}` removes from the library only those items that do
-   not belong to any other category still represented in the library.
+5. `DELETE /library/category/{category_id}` removes every item in that category from the
+   library, regardless of membership in other categories.
 6. All four new endpoints return `404` when given an unknown ID.
 7. `POST /library/sync` (sync-all) continues to work correctly after the refactor.
 8. Old endpoints (`/library/add/`, `/library/sync/{id}`, `DELETE /library/{id}`) return `404`
@@ -200,7 +199,4 @@ async def upsert_library_content(content_id: str, request: Request):
 
 ## Open Questions
 
-| # | Question | Options | Implication if left open |
-|---|----------|---------|--------------------------|
-| 1 | For `DELETE /library/category/{category_id}`, should "exclusive" mean "no other *library* category" or "no other *portal* category"? | Library categories only / All portal categories | Affects how the SQL query is written; library-only is the conservative default in this spec |
-| 2 | Should `POST /library/category/{category_id}` return the count of items enqueued in the response body, or always an empty `202`? | Count in body / Empty 202 | Minor — empty 202 keeps parity with the content endpoint |
+None — all questions resolved.
