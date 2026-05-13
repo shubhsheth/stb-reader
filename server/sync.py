@@ -25,10 +25,13 @@ def parse_season_num(season_name: str, fallback: int) -> int:
     return int(m.group()) if m else fallback
 
 
-def movie_strm_path(output_dir: str, name: str, year: str) -> Path:
+def movie_strm_path(
+    output_dir: str, name: str, year: str, category_folder: str | None = None
+) -> Path:
     s = sanitize(name)
     folder = f"{s} ({year})"
-    return Path(output_dir) / "Movies" / folder / f"{folder}.strm"
+    base = Path(output_dir) / category_folder if category_folder else Path(output_dir)
+    return base / "Movies" / folder / f"{folder}.strm"
 
 
 def episode_strm_path(
@@ -38,13 +41,15 @@ def episode_strm_path(
     season_num: int,
     ep_num: int,
     ep_name: str,
+    category_folder: str | None = None,
 ) -> Path:
     sname = sanitize(name)
     sep_name = sanitize(ep_name)
     show_folder = f"{sname} ({year})"
     season_folder = f"Season {season_num:02d}"
     filename = f"{show_folder} - S{season_num:02d}E{ep_num:02d} - {sep_name}.strm"
-    return Path(output_dir) / "TV" / show_folder / season_folder / filename
+    base = Path(output_dir) / category_folder if category_folder else Path(output_dir)
+    return base / "TV" / show_folder / season_folder / filename
 
 
 def write_strm(path: Path, url: str) -> None:

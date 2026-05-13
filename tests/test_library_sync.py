@@ -95,9 +95,19 @@ def test_movie_strm_path(tmp_path):
     assert p == tmp_path / "Movies" / "My Movie (2023)" / "My Movie (2023).strm"
 
 
+def test_movie_strm_path_with_category(tmp_path):
+    p = movie_strm_path(str(tmp_path), "My Movie", "2023", category_folder="Action")
+    assert p == tmp_path / "Action" / "Movies" / "My Movie (2023)" / "My Movie (2023).strm"
+
+
 def test_episode_strm_path(tmp_path):
     p = episode_strm_path(str(tmp_path), "My Show", "2021", 1, 2, "Pilot")
     assert p == tmp_path / "TV" / "My Show (2021)" / "Season 01" / "My Show (2021) - S01E02 - Pilot.strm"
+
+
+def test_episode_strm_path_with_category(tmp_path):
+    p = episode_strm_path(str(tmp_path), "My Show", "2021", 1, 2, "Pilot", category_folder="Drama")
+    assert p == tmp_path / "Drama" / "TV" / "My Show (2021)" / "Season 01" / "My Show (2021) - S01E02 - Pilot.strm"
 
 
 def test_write_strm_creates_file(tmp_path):
