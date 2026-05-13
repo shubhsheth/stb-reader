@@ -206,6 +206,50 @@ def test_add_or_sync_adds_when_not_in_library(db, tmp_path):
     assert path.exists()
 
 
+def test_add_content_movie_with_category_folder(db, tmp_path):
+    _seed(db, "m1", "My Movie", "2023", is_series=False)
+    vod = MagicMock()
+    count = add_content(db, vod, str(tmp_path), "http://proxy:8000", "m1", category_folder="Action")
+    assert count == 1
+    path = tmp_path / "Action" / "Movies" / "My Movie (2023)" / "My Movie (2023).strm"
+    assert path.exists()
+    assert path.read_text().strip() == "http://proxy:8000/vod/content/m1/stream"
+
+
+def test_add_content_series_with_category_folder(db, tmp_path):
+    _seed(db, "s1", "My Show", "2021", is_series=True)
+    vod = _make_vod(1, 1)
+    add_content(db, vod, str(tmp_path), "http://proxy:8000", "s1", category_folder="Drama")
+    ep_path = tmp_path / "Drama" / "TV" / "My Show (2021)" / "Season 01"
+    assert ep_path.exists()
+    strm_files = list(ep_path.glob("*.strm"))
+    assert len(strm_files) == 1
+
+
+def test_add_content_no_category_uses_root(db, tmp_path):
+    _seed(db, "m1", "My Movie", "2023", is_series=False)
+    vod = MagicMock()
+    add_content(db, vod, str(tmp_path), "http://proxy:8000", "m1")
+    path = tmp_path / "Movies" / "My Movie (2023)" / "My Movie (2023).strm"
+    assert path.exists()
+
+
+def test_add_or_sync_skips_already_in_library_for_category(db, tmp_path):
+    _seed(db, "m1", "My Movie", "2023", is_series=False)
+    vod = MagicMock()
+    # Add via single-add (root folder)
+    add_content(db, vod, str(tmp_path), "http://proxy:8000", "m1")
+    root_path = tmp_path / "Movies" / "My Movie (2023)" / "My Movie (2023).strm"
+    assert root_path.exists()
+    # Category sync should skip (already in library)
+    count = add_or_sync_content(
+        db, vod, str(tmp_path), "http://proxy:8000", "m1", category_folder="Action"
+    )
+    assert count == 0
+    cat_path = tmp_path / "Action" / "Movies" / "My Movie (2023)" / "My Movie (2023).strm"
+    assert not cat_path.exists()
+
+
 def test_add_or_sync_syncs_when_already_in_library(db, tmp_path):
     _seed(db, "s1", "Show", "2021", is_series=True)
     vod = _make_vod(1, 1)
