@@ -21,6 +21,7 @@
       display: flex;
       align-items: center;
       gap: 1rem;
+      flex-wrap: wrap;
     }
 
     header h1 { font-size: 1.2rem; color: #fff; white-space: nowrap; }
@@ -29,10 +30,12 @@
       display: flex;
       gap: 0.5rem;
       flex: 1;
+      min-width: 0;
     }
 
     #query {
       flex: 1;
+      min-width: 0;
       padding: 0.45rem 0.75rem;
       background: #252525;
       border: 1px solid #333;
@@ -58,12 +61,43 @@
     #search-btn { background: #3a3a3a; color: #e0e0e0; }
     #search-btn:hover:not(:disabled) { background: #484848; }
 
+    /* ── View tabs ─────────────────────────────────────────────────────────── */
+
+    #view-tabs {
+      display: flex;
+      gap: 0;
+      background: #151515;
+      border-bottom: 1px solid #222;
+    }
+
+    .view-tab {
+      padding: 0.6rem 1.25rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #777;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      cursor: pointer;
+    }
+
+    .view-tab.active {
+      color: #e0e0e0;
+      border-bottom-color: #555;
+    }
+
+    .view-tab:hover:not(.active) { color: #aaa; background: #1a1a1a; }
+
+    /* ── Search view ───────────────────────────────────────────────────────── */
+
     #filters {
       display: flex;
       gap: 0.4rem;
       padding: 0.75rem 1.5rem;
       background: #151515;
       border-bottom: 1px solid #222;
+      flex-wrap: wrap;
     }
 
     .filter-btn {
@@ -112,6 +146,7 @@
 
     #results {
       padding: 0 1.5rem 2rem;
+      overflow-x: auto;
     }
 
     table {
@@ -152,6 +187,8 @@
 
     .badge-series { background: #1e3a5f; color: #7ab8f5; }
     .badge-movie  { background: #1e3a22; color: #7ae07a; }
+    .badge-in-lib { background: #1e3a22; color: #7ae07a; }
+    .badge-not-in-lib { background: #2a2a2a; color: #777; }
 
     .poster img { width: 56px; height: auto; border-radius: 2px; vertical-align: middle; }
 
@@ -159,6 +196,8 @@
     .btn-add:hover:not(:disabled)    { background: #225522; }
     .btn-remove { background: #4a1a1a; color: #e07a7a; }
     .btn-remove:hover:not(:disabled) { background: #552222; }
+    .btn-sync   { background: #1a2a4a; color: #7ab8f5; }
+    .btn-sync:hover:not(:disabled)   { background: #1e3560; }
 
     #pagination {
       display: flex;
@@ -167,6 +206,7 @@
       padding: 1rem 1.5rem;
       font-size: 0.85rem;
       color: #777;
+      flex-wrap: wrap;
     }
 
     .page-btn { background: #252525; color: #aaa; border: 1px solid #333; }
@@ -177,6 +217,83 @@
       color: #555;
       font-size: 0.9rem;
       display: none;
+    }
+
+    /* ── Categories view ───────────────────────────────────────────────────── */
+
+    #categories-view {
+      display: none;
+      padding: 1rem 1.5rem 2rem;
+    }
+
+    #categories-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    #categories-toolbar span {
+      font-size: 0.8rem;
+      color: #666;
+    }
+
+    #cat-error-msg {
+      color: #e07070;
+      font-size: 0.85rem;
+      padding: 0.5rem 0;
+      display: none;
+    }
+
+    #cat-spinner {
+      display: none;
+      width: 14px; height: 14px;
+      border: 2px solid #444;
+      border-top-color: #aaa;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    #cat-empty {
+      padding: 2rem 0;
+      color: #555;
+      font-size: 0.9rem;
+      display: none;
+    }
+
+    #cat-list table { margin-top: 0; }
+
+    /* ── Mobile overrides ──────────────────────────────────────────────────── */
+
+    @media (max-width: 600px) {
+      header { padding: 0.75rem 1rem; }
+
+      #search-form { width: 100%; }
+
+      #filters { padding: 0.6rem 1rem; }
+
+      #status-bar,
+      #error-msg,
+      #no-results { padding-left: 1rem; padding-right: 1rem; }
+
+      #results { padding: 0 0 1.5rem; }
+
+      /* hide less-important columns */
+      thead th:nth-child(5),
+      td:nth-child(5),
+      thead th:nth-child(6),
+      td:nth-child(6),
+      thead th:nth-child(7),
+      td:nth-child(7) { display: none; }
+
+      td, thead th { padding: 0.5rem 0.5rem; }
+
+      button { padding: 0.55rem 0.8rem; min-height: 36px; }
+
+      #pagination { padding: 0.75rem 1rem; }
+
+      #categories-view { padding: 0.75rem 1rem 1.5rem; }
     }
   </style>
 </head>
@@ -190,26 +307,46 @@
   </form>
 </header>
 
-<div id="filters">
-  <button class="filter-btn active" data-filter="">All</button>
-  <button class="filter-btn" data-filter="0">Movies</button>
-  <button class="filter-btn" data-filter="1">Series</button>
+<div id="view-tabs">
+  <button class="view-tab active" data-view="search">Search</button>
+  <button class="view-tab" data-view="categories">Categories</button>
 </div>
 
-<div id="status-bar">
-  <div id="spinner"></div>
-  <span id="status-text"></span>
+<!-- Search view -->
+<div id="search-view">
+  <div id="filters">
+    <button class="filter-btn active" data-filter="">All</button>
+    <button class="filter-btn" data-filter="0">Movies</button>
+    <button class="filter-btn" data-filter="1">Series</button>
+  </div>
+
+  <div id="status-bar">
+    <div id="spinner"></div>
+    <span id="status-text"></span>
+  </div>
+
+  <div id="error-msg"></div>
+
+  <div id="results"></div>
+  <div id="no-results">No results found.</div>
+
+  <div id="pagination">
+    <button class="page-btn" id="prev-btn" disabled>&#8592; Prev</button>
+    <span id="page-info"></span>
+    <button class="page-btn" id="next-btn" disabled>Next &#8594;</button>
+  </div>
 </div>
 
-<div id="error-msg"></div>
-
-<div id="results"></div>
-<div id="no-results">No results found.</div>
-
-<div id="pagination">
-  <button class="page-btn" id="prev-btn" disabled>&#8592; Prev</button>
-  <span id="page-info"></span>
-  <button class="page-btn" id="next-btn" disabled>Next &#8594;</button>
+<!-- Categories view -->
+<div id="categories-view">
+  <div id="categories-toolbar">
+    <button id="cat-refresh-btn" class="page-btn">Refresh</button>
+    <div id="cat-spinner"></div>
+    <span id="cat-status"></span>
+  </div>
+  <div id="cat-error-msg"></div>
+  <div id="cat-empty">No categories found. Run a portal sync first.</div>
+  <div id="cat-list"></div>
 </div>
 
 <script>
@@ -222,6 +359,12 @@
     total: 0,
     libraryIds: new Set(),
     loading: false,
+  };
+
+  let catState = {
+    loaded: false,
+    categories: [],
+    pending: new Set(),
   };
 
   // ── API ──────────────────────────────────────────────────────────────────
@@ -249,16 +392,28 @@
   }
 
   async function addToLibrary(contentId) {
-    await apiFetch(`/library/add/${contentId}`, { method: 'POST' });
+    await apiFetch(`/library/content/${contentId}`, { method: 'POST' });
     state.libraryIds.add(contentId);
   }
 
   async function removeFromLibrary(contentId) {
-    await apiFetch(`/library/${contentId}`, { method: 'DELETE' });
+    await apiFetch(`/library/content/${contentId}`, { method: 'DELETE' });
     state.libraryIds.delete(contentId);
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  async function loadCategories() {
+    return apiFetch('/library/categories');
+  }
+
+  async function addCategory(categoryId) {
+    return apiFetch(`/library/category/${categoryId}`, { method: 'POST' });
+  }
+
+  async function removeCategory(categoryId) {
+    return apiFetch(`/library/category/${categoryId}`, { method: 'DELETE' });
+  }
+
+  // ── Search render ────────────────────────────────────────────────────────
 
   function setLoading(on) {
     state.loading = on;
@@ -350,6 +505,102 @@
     info.textContent = `Page ${state.page} of ${totalPages} (${state.total} results)`;
   }
 
+  // ── Categories render ────────────────────────────────────────────────────
+
+  function setCatLoading(on) {
+    document.getElementById('cat-spinner').style.display = on ? 'block' : 'none';
+    document.getElementById('cat-refresh-btn').disabled = on;
+  }
+
+  function showCatError(msg) {
+    const el = document.getElementById('cat-error-msg');
+    el.textContent = msg;
+    el.style.display = msg ? 'block' : 'none';
+  }
+
+  function renderCategories(categories) {
+    const listEl = document.getElementById('cat-list');
+    const emptyEl = document.getElementById('cat-empty');
+
+    if (categories.length === 0) {
+      listEl.innerHTML = '';
+      emptyEl.style.display = 'block';
+      return;
+    }
+
+    emptyEl.style.display = 'none';
+
+    const rows = categories.map(cat => {
+      const inLib = cat.in_library === 1;
+      const badge = inLib
+        ? '<span class="badge badge-in-lib">In Library</span>'
+        : '<span class="badge badge-not-in-lib">Not Added</span>';
+      const actions = inLib
+        ? `<button class="btn-sync" data-cat-action="sync" data-cat-id="${cat.category_id}">Sync</button>
+           <button class="btn-remove" data-cat-action="remove" data-cat-id="${cat.category_id}">Remove</button>`
+        : `<button class="btn-add" data-cat-action="add" data-cat-id="${cat.category_id}">Add</button>`;
+      return `<tr data-cat-id="${cat.category_id}">
+        <td class="title">${esc(cat.title)}</td>
+        <td>${badge}</td>
+        <td style="white-space:nowrap">${actions}</td>
+      </tr>`;
+    }).join('');
+
+    listEl.innerHTML = `
+      <table>
+        <thead>
+          <tr><th>Category</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  function updateCatRow(categoryId, inLib) {
+    const idx = catState.categories.findIndex(c => c.category_id === categoryId);
+    if (idx !== -1) catState.categories[idx].in_library = inLib ? 1 : 0;
+    renderCategories(catState.categories);
+  }
+
+  async function refreshCategories() {
+    showCatError('');
+    setCatLoading(true);
+    try {
+      catState.categories = await loadCategories();
+      catState.loaded = true;
+      renderCategories(catState.categories);
+    } catch (err) {
+      showCatError(err.message);
+    } finally {
+      setCatLoading(false);
+    }
+  }
+
+  async function handleCatAction(categoryId, action) {
+    if (catState.pending.has(categoryId)) return;
+    catState.pending.add(categoryId);
+    showCatError('');
+
+    // disable buttons in the row
+    const row = document.querySelector(`tr[data-cat-id="${categoryId}"]`);
+    if (row) row.querySelectorAll('button').forEach(b => b.disabled = true);
+
+    try {
+      if (action === 'add' || action === 'sync') {
+        await addCategory(categoryId);
+        updateCatRow(categoryId, true);
+      } else {
+        await removeCategory(categoryId);
+        updateCatRow(categoryId, false);
+      }
+    } catch (err) {
+      showCatError(err.message);
+      // re-render to restore buttons
+      renderCategories(catState.categories);
+    } finally {
+      catState.pending.delete(categoryId);
+    }
+  }
+
   // ── Actions ──────────────────────────────────────────────────────────────
 
   async function runSearch(page = 1) {
@@ -390,6 +641,19 @@
     }
   }
 
+  // ── View switching ───────────────────────────────────────────────────────
+
+  function switchView(view) {
+    document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector(`.view-tab[data-view="${view}"]`).classList.add('active');
+    document.getElementById('search-view').style.display = view === 'search' ? '' : 'none';
+    document.getElementById('categories-view').style.display = view === 'categories' ? '' : 'none';
+
+    if (view === 'categories' && !catState.loaded) {
+      refreshCategories();
+    }
+  }
+
   // ── Event wiring ─────────────────────────────────────────────────────────
 
   document.getElementById('search-form').addEventListener('submit', e => {
@@ -422,6 +686,18 @@
     if (state.page < totalPages) runSearch(state.page + 1);
   });
 
+  document.querySelectorAll('.view-tab').forEach(tab => {
+    tab.addEventListener('click', () => switchView(tab.dataset.view));
+  });
+
+  document.getElementById('cat-refresh-btn').addEventListener('click', refreshCategories);
+
+  document.getElementById('cat-list').addEventListener('click', e => {
+    const btn = e.target.closest('button[data-cat-action]');
+    if (!btn) return;
+    handleCatAction(btn.dataset.catId, btn.dataset.catAction);
+  });
+
   // ── Init ─────────────────────────────────────────────────────────────────
 
   function esc(str) {
@@ -429,6 +705,7 @@
   }
 
   document.getElementById('pagination').style.visibility = 'hidden';
+  document.getElementById('categories-view').style.display = 'none';
 
   loadLibrary().catch(() => {});
 </script>

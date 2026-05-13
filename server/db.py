@@ -361,6 +361,13 @@ def remove_category_from_library(db: sqlite3.Connection, category_id: str) -> No
     db.commit()
 
 
+def list_categories(db: sqlite3.Connection) -> list[dict]:
+    rows = db.execute(
+        "SELECT category_id, title, in_library, added_at FROM vod_categories ORDER BY title"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def set_last_synced(db: sqlite3.Connection, content_id: str) -> None:
     db.execute(
         "UPDATE vod_content SET last_synced_at = ? WHERE content_id = ?",
