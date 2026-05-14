@@ -10,7 +10,7 @@
   - Verify: `pytest tests/test_library_db.py::TestListCategories`
   - Files: `tests/test_library_db.py`
 
-- [ ] Task 3: Add "Items" column to category table in UI
-  - Acceptance: `<th>Items</th>` and `<td>${cat.item_count}</td>` appear in `renderCategories()`
-  - Verify: Load the Categories tab in the browser; confirm column is visible with numeric values
+- [ ] Task 3: Show item count as subtext in the title cell
+  - Acceptance: Title cell renders category name on one line and dimmed "N items" beneath it; no new column added; `.item-count` CSS rule dims the subtext
+  - Verify: Load the Categories tab in the browser; confirm count appears under each title without adding a column
   - Files: `server/static/index.html`

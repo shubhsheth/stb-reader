@@ -38,8 +38,9 @@ Use existing helpers: `_seed_category`, `upsert_vod_content`, `upsert_vod_conten
 ### Task 3 — UI (server/static/index.html)
 
 In `renderCategories()`:
-1. Add `<th>Items</th>` to the `<thead>` row (between Status and the empty actions column).
-2. Add `<td>${cat.item_count}</td>` to each `<tr>` template in the same position.
+1. Expand the title `<td>` to include a `<small>` subtext line: `${cat.item_count} items`.
+2. Add a CSS rule for `.item-count` to dim it (e.g. `color: #888; font-size: 0.8em`).
+3. No new column — the `<thead>` and column count stay the same.
 
 ## Risks
 

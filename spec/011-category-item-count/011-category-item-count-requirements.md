@@ -12,7 +12,7 @@ When a user views the Library → Categories tab, they currently see category na
 
 - FR-1: `GET /library/categories` must include an `item_count` field on each category object, representing the total number of content items linked to that category via `vod_content_category`.
 - FR-2: `item_count` must be `0` for categories with no linked content (not `null` or absent).
-- FR-3: The Categories table in the UI must display an "Items" column showing `item_count` for each row.
+- FR-3: The item count must be shown as subtext within the title cell — e.g., the category name on one line and a dimmed "42 items" beneath it. No separate column.
 
 ## Non-Functional Requirements
 
@@ -76,8 +76,8 @@ def list_categories(db: sqlite3.Connection) -> list[dict]:
 ```
 
 ```js
-// index.html style — template literal rows, esc() for user content
-`<td>${cat.item_count}</td>`
+// index.html style — subtext inside the title cell
+`<td class="title">${esc(cat.title)}<br><small class="item-count">${cat.item_count} items</small></td>`
 ```
 
 ## Testing Strategy
@@ -99,7 +99,7 @@ def list_categories(db: sqlite3.Connection) -> list[dict]:
 
 - SC-1: `GET /library/categories` response includes `item_count` (integer ≥ 0) on every object.
 - SC-2: `item_count` equals the number of rows in `vod_content_category` for that category.
-- SC-3: The Categories tab shows an "Items" column with the count for each row.
+- SC-3: The Categories tab shows the item count as dimmed subtext beneath each category title in the title cell; the table column count is unchanged.
 - SC-4: `pytest tests/` passes with no regressions.
 
 ## Open Questions
