@@ -478,7 +478,8 @@
 
   function renderButton(contentId, inLib) {
     if (inLib) {
-      return `<button class="btn-remove" data-action="remove" data-id="${contentId}">Remove</button>`;
+      return `<button class="btn-sync" data-action="sync" data-id="${contentId}">Sync</button>
+              <button class="btn-remove" data-action="remove" data-id="${contentId}">Remove</button>`;
     }
     return `<button class="btn-add" data-action="add" data-id="${contentId}">Add</button>`;
   }
@@ -624,10 +625,11 @@
 
   async function handleLibraryAction(contentId, action) {
     showError('');
-    const btn = document.querySelector(`tr[data-id="${contentId}"] button`);
-    if (btn) btn.disabled = true;
+    const row = document.querySelector(`tr[data-id="${contentId}"]`);
+    const btns = row ? row.querySelectorAll('button') : [];
+    btns.forEach(b => b.disabled = true);
     try {
-      if (action === 'add') {
+      if (action === 'add' || action === 'sync') {
         await addToLibrary(contentId);
         updateRowButton(contentId, true);
       } else {
@@ -636,7 +638,7 @@
       }
     } catch (err) {
       showError(err.message);
-      if (btn) btn.disabled = false;
+      btns.forEach(b => b.disabled = false);
     }
   }
 
