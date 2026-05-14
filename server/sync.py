@@ -1,5 +1,6 @@
 import re
 import sqlite3
+import time
 from pathlib import Path
 
 from .db import (
@@ -72,10 +73,14 @@ def _write_series_strm_files(
     seasons = vod.get_seasons(content_id)
     for s_idx, season in enumerate(seasons):
         season_num = parse_season_num(season.name, s_idx + 1)
+        if delay_s > 0:
+            time.sleep(delay_s)
         episodes = vod.get_episodes(content_id, season.id, delay_s=delay_s)
         for e_idx, episode in enumerate(episodes):
             if episode_exists(db, content_id, season.id, episode.id):
                 continue
+            if delay_s > 0:
+                time.sleep(delay_s)
             files = vod.get_episode_files(content_id, season.id, episode.id)
             if not files:
                 continue

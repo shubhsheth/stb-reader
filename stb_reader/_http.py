@@ -5,6 +5,8 @@ from urllib.parse import urlparse
 import requests
 from .exceptions import AuthError, STBError, StreamError
 
+_reauth_local = threading.local()
+
 logger = logging.getLogger(__name__)
 
 _USER_AGENT = "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG200 stbapp ver: 2 rev: 250 Safari/533.3"
@@ -58,10 +60,14 @@ class STBSession:
         if not resp.ok:
             raise STBError(f"HTTP {resp.status_code}: {resp.text[:200]}")
         if _is_auth_failure(resp.text):
-            if self.reauth_fn and not _retry:
+            if self.reauth_fn and not _retry and not getattr(_reauth_local, 'active', False):
                 with self._reauth_lock:
-                    logger.debug("Auth failure on %s, re-authenticating", action)
-                    self.reauth_fn()
+                    _reauth_local.active = True
+                    try:
+                        logger.debug("Auth failure on %s, re-authenticating", action)
+                        self.reauth_fn()
+                    finally:
+                        _reauth_local.active = False
                 return self.get(type_, action, _retry=True, **params)
             raise AuthError(f"Portal rejected request ({action}): {resp.text[:100]}")
         try:

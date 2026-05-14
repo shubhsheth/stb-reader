@@ -151,6 +151,7 @@ class TestSyncAll:
         assert resp.status_code == 204
 
 
+
 class TestCategoryUpsert:
     def test_returns_202_for_known_category(self, library_client):
         tc, _, db, _ = library_client
@@ -175,6 +176,7 @@ class TestCategoryUpsert:
         assert resp.status_code == 404
 
     def test_category_sync_passes_category_folder_to_add_or_sync(self, library_client):
+        import threading
         tc, _, db, _ = library_client
         upsert_vod_category(db, "cat1", "Action Movies", "")
         upsert_vod_content(db, _vod_row("m1", "Die Hard", "1988"))
@@ -182,8 +184,17 @@ class TestCategoryUpsert:
         upsert_vod_content_category(db, "m1", "cat1")
         db.commit()
         calls = []
-        with patch("server.routes.library.add_or_sync_content", side_effect=lambda *a, **kw: calls.append((a, kw)) or 1):
+        done = threading.Event()
+
+        def mock_sync(*a, **kw):
+            calls.append((a, kw))
+            done.set()
+            return 1
+
+        with patch("server.routes.library.add_or_sync_content", side_effect=mock_sync):
             tc.post("/library/category/cat1")
+            done.wait(timeout=5.0)
+
         assert any(kw.get("category_folder") == "Action Movies" or (len(a) > 6 and a[6] == "Action Movies") for a, kw in calls)
 
     def test_enqueues_task_for_each_content_item(self, library_client):
