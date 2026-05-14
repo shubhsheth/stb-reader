@@ -175,6 +175,7 @@
     }
 
     td.title { color: #e8e8e8; font-weight: 500; }
+    .item-count { display: block; color: #777; font-size: 0.8em; font-weight: normal; }
 
     .badge {
       display: inline-block;
@@ -539,7 +540,7 @@
            <button class="btn-remove" data-cat-action="remove" data-cat-id="${cat.category_id}">Remove</button>`
         : `<button class="btn-add" data-cat-action="add" data-cat-id="${cat.category_id}">Add</button>`;
       return `<tr data-cat-id="${cat.category_id}">
-        <td class="title">${esc(cat.title)}</td>
+        <td class="title">${esc(cat.title)}<small class="item-count">${cat.item_count} items</small></td>
         <td>${badge}</td>
         <td style="white-space:nowrap">${actions}</td>
       </tr>`;

@@ -23,6 +23,7 @@ from server.db import (
     add_category_to_library,
     remove_category_from_library,
     remove_category_strm_files,
+    list_categories,
 )
 
 
@@ -341,3 +342,23 @@ class TestRemoveCategoryFromLibrary:
         cat = get_category(db, "cat1")
         assert cat["in_library"] == 0
         assert cat["added_at"] is None
+
+
+class TestListCategories:
+    def test_item_count_zero_when_no_content(self, db):
+        _seed_category(db)
+        cats = list_categories(db)
+        assert len(cats) == 1
+        assert cats[0]["category_id"] == "cat1"
+        assert cats[0]["item_count"] == 0
+
+    def test_item_count_reflects_linked_content(self, db):
+        _seed_category(db)
+        upsert_vod_content(db, _vod_row("c1"))
+        upsert_vod_content(db, _vod_row("c2"))
+        db.commit()
+        upsert_vod_content_category(db, "c1", "cat1")
+        upsert_vod_content_category(db, "c2", "cat1")
+        db.commit()
+        cats = list_categories(db)
+        assert cats[0]["item_count"] == 2
