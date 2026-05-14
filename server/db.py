@@ -364,7 +364,14 @@ def remove_category_from_library(db: sqlite3.Connection, category_id: str) -> No
 
 def list_categories(db: sqlite3.Connection) -> list[dict]:
     rows = db.execute(
-        "SELECT category_id, title, in_library, added_at FROM vod_categories ORDER BY title"
+        """
+        SELECT vc.category_id, vc.title, vc.in_library, vc.added_at,
+               COUNT(vcc.content_id) AS item_count
+        FROM vod_categories vc
+        LEFT JOIN vod_content_category vcc ON vc.category_id = vcc.category_id
+        GROUP BY vc.category_id
+        ORDER BY vc.title
+        """
     ).fetchall()
     return [dict(r) for r in rows]
 
