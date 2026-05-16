@@ -24,3 +24,4 @@ class Settings(BaseSettings):
     strm_proxy_streams: bool = False
     xtream_username: str = "admin"
     xtream_password: str = "password"
+    xtream_max_pages: int = 0

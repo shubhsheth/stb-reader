@@ -21,12 +21,14 @@ def _check_auth(username: str, password: str, settings) -> None:
         raise HTTPException(status_code=403, detail="Invalid credentials")
 
 
-def _collect_all_pages(fn, **kwargs) -> list:
+def _collect_all_pages(fn, max_pages: int = 0, **kwargs) -> list:
     items, page = [], 1
     while True:
         result = fn(**kwargs, page=page)
         items.extend(result.items)
         if not result.items or page * result.per_page >= result.total:
+            break
+        if max_pages and page >= max_pages:
             break
         page += 1
     return items
@@ -96,6 +98,7 @@ def player_api(
     client = request.app.state.client
 
     _check_auth(username, password, settings)
+    max_pages = settings.xtream_max_pages
 
     if action is None:
         return _login_response(settings, request)
@@ -106,7 +109,7 @@ def player_api(
 
     if action == "get_live_streams":
         genre = category_id or "*"
-        channels = _collect_all_pages(client.live_tv.get_channels, genre_id=genre)
+        channels = _collect_all_pages(client.live_tv.get_channels, max_pages=max_pages, genre_id=genre)
         return [
             {
                 "num": i + 1,
@@ -131,7 +134,7 @@ def player_api(
 
     if action == "get_vod_streams":
         cat = category_id or "*"
-        content = _collect_all_pages(client.vod.get_content, category_id=cat)
+        content = _collect_all_pages(client.vod.get_content, max_pages=max_pages, category_id=cat)
         movies = [c for c in content if not c.is_series]
         return [
             {
@@ -154,7 +157,7 @@ def player_api(
     if action == "get_vod_info":
         if not vod_id:
             return {}
-        all_content = _collect_all_pages(client.vod.get_content, category_id="*")
+        all_content = _collect_all_pages(client.vod.get_content, max_pages=max_pages, category_id="*")
         for c in all_content:
             if c.id == str(vod_id) and not c.is_series:
                 return {
@@ -189,7 +192,7 @@ def player_api(
 
     if action == "get_series":
         cat = category_id or "*"
-        content = _collect_all_pages(client.vod.get_content, category_id=cat)
+        content = _collect_all_pages(client.vod.get_content, max_pages=max_pages, category_id=cat)
         series = [c for c in content if c.is_series]
         return [
             {
@@ -262,7 +265,7 @@ def player_api(
             )
 
         # Find series metadata
-        all_content = _collect_all_pages(client.vod.get_content, category_id="*")
+        all_content = _collect_all_pages(client.vod.get_content, max_pages=max_pages, category_id="*")
         series_meta = next((c for c in all_content if c.id == str(series_id) and c.is_series), None)
 
         info = {
@@ -358,7 +361,7 @@ def m3u_playlist(
     _check_auth(username, password, settings)
 
     genres = {g.id: g.title for g in client.live_tv.get_genres()}
-    channels = _collect_all_pages(client.live_tv.get_channels)
+    channels = _collect_all_pages(client.live_tv.get_channels, max_pages=settings.xtream_max_pages)
     base = str(request.base_url).rstrip("/")
 
     lines = ["#EXTM3U"]
