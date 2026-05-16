@@ -142,6 +142,7 @@ def test_get_episodes_passes_page_param(session):
     assert result.page == 3
     assert "p=3" in responses_lib.calls[0].request.url
 
+
 # --- get_stream_url ---
 
 @responses_lib.activate

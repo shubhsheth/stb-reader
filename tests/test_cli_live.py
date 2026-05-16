@@ -60,6 +60,7 @@ def test_live_stream_prints_url():
     responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {
         "cmd": "ffmpeg http://cdn/stream.m3u8", "error": "",
     }})
+    responses_lib.add(responses_lib.GET, "http://cdn/stream.m3u8", body=b"")
     result = CliRunner().invoke(main, ["stream", "--type", "live", "ffrt http://x"])
     assert result.exit_code == 0
     assert "http://cdn/stream.m3u8" in result.output
