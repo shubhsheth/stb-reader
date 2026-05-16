@@ -116,6 +116,17 @@ def test_get_stream_url_by_id_finds_channel():
 
 
 @responses_lib.activate
+def test_get_stream_url_by_id_finds_channel_on_second_page():
+    page1 = [{"id": "1", "number": "1", "name": "CH1", "cmd": "x", "logo": "", "tv_genre_id": "1", "hd": False, "censored": False}]
+    page2 = [{"id": "2", "number": "2", "name": "CH2", "cmd": "ffmpeg http://ch2", "logo": "", "tv_genre_id": "1", "hd": False, "censored": False}]
+    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"data": page1, "total_items": 2, "max_page_items": 1}})
+    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"data": page2, "total_items": 2, "max_page_items": 1}})
+    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": {"cmd": "http://ch2", "error": ""}})
+    svc = ITVService(_make_session())
+    assert svc.get_stream_url_by_id("2") == "http://ch2"
+
+
+@responses_lib.activate
 def test_get_stream_url_by_id_raises_when_not_found():
     channels = [
         {"id": "1", "number": "1", "name": "CH1", "cmd": "x", "logo": "", "tv_genre_id": "1", "hd": False, "censored": False}

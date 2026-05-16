@@ -77,11 +77,13 @@ class ITVService:
 
     def get_stream_url_by_id(self, channel_id: str) -> str:
         page = 1
+        seen = 0
         while True:
             result = self.get_channels(genre_id="*", page=page)
             for ch in result.items:
                 if ch.id == str(channel_id):
                     return self.get_stream_url(ch.cmd)
-            if not result.items or page * result.per_page >= result.total:
+            seen += len(result.items)
+            if not result.items or seen >= result.total:
                 raise NotFoundError("channel not found")
             page += 1
