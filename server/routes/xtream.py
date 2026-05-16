@@ -146,7 +146,7 @@ def player_api(
                 "rating": c.rating,
                 "rating_5based": _safe_rating_5(c.rating),
                 "added": "0",
-                "category_id": "",
+                "category_id": c.category_id,
                 "container_extension": "mp4",
                 "custom_sid": "",
                 "direct_source": "",
@@ -178,7 +178,7 @@ def player_api(
                         "stream_id": int(c.id),
                         "name": c.name,
                         "added": "0",
-                        "category_id": "",
+                        "category_id": c.category_id,
                         "container_extension": "mp4",
                         "custom_sid": "",
                         "direct_source": "",
@@ -211,7 +211,7 @@ def player_api(
                 "backdrop_path": [],
                 "youtube_trailer": "",
                 "episode_run_time": "",
-                "category_id": "",
+                "category_id": c.category_id,
             }
             for i, c in enumerate(series)
         ]
@@ -282,7 +282,7 @@ def player_api(
             "backdrop_path": [],
             "youtube_trailer": "",
             "episode_run_time": "",
-            "category_id": "",
+            "category_id": series_meta.category_id if series_meta else "",
         }
 
         return {"info": info, "episodes": episodes_dict, "seasons": seasons_list}

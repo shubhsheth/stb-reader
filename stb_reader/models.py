@@ -45,6 +45,7 @@ class Content:
     duration: str
     is_series: bool
     fav: bool
+    category_id: str = ""
 
 
 @dataclass
