@@ -52,3 +52,38 @@ def test_authenticate_token_propagated_to_second_request():
     client = STBClient(BASE_URL, MAC)
     client.authenticate()
     assert responses_lib.calls[1].request.headers["Authorization"] == "Bearer tok_abc"
+
+
+@responses_lib.activate
+def test_get_profile_sends_device_params():
+    import hashlib
+    from stb_reader._http import STBSession
+    serial = "TESTSERIAL"
+    session = STBSession(BASE_URL, MAC, serial, "en", "Europe/London")
+    session.token = "tok"
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {}})
+    get_profile(session)
+    qs = _qs(responses_lib.calls[0])
+    assert qs["device_id"][0] == hashlib.sha256(serial.encode()).hexdigest()
+    assert qs["device_id2"][0] == hashlib.sha256(MAC.encode()).hexdigest()
+    assert qs["signature"][0] == hashlib.sha256((serial + MAC).encode()).hexdigest()
+
+
+@responses_lib.activate
+def test_get_profile_applies_refreshed_token():
+    from stb_reader._http import STBSession
+    session = STBSession(BASE_URL, MAC, "000000000000", "en", "Europe/London")
+    session.token = "old_token"
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"token": "new_token"}})
+    get_profile(session)
+    assert session.token == "new_token"
+
+
+@responses_lib.activate
+def test_get_profile_ignores_empty_token():
+    from stb_reader._http import STBSession
+    session = STBSession(BASE_URL, MAC, "000000000000", "en", "Europe/London")
+    session.token = "original"
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {"token": ""}})
+    get_profile(session)
+    assert session.token == "original"

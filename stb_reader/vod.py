@@ -1,16 +1,11 @@
 from __future__ import annotations
-import re
 from typing import TYPE_CHECKING
 from .models import Category, Content, Season, Episode, EpisodeFile, PagedResult
-from .exceptions import NotFoundError, STBError, StreamError
-from ._http import _as_list
-from .live_tv import _clean_url
+from .exceptions import STBError, StreamError
+from ._http import _as_list, _clean_url
 
 if TYPE_CHECKING:
     from ._http import STBSession
-
-
-ADULT_TERMS = re.compile(r"adult|18\+", re.IGNORECASE)
 
 
 class VODService:
@@ -27,7 +22,6 @@ class VODService:
                 censored=bool(c.get("censored", False)),
             )
             for c in _as_list(data)
-            if not ADULT_TERMS.search(c.get("title", ""))
         ]
 
     def get_content(
@@ -101,6 +95,7 @@ class VODService:
                 episode_id=0,
                 p=page,
             )
+            batch = raw.get("data", [])
             episodes.extend(
                 Episode(
                     id=str(e["id"]),
@@ -108,11 +103,10 @@ class VODService:
                     series_number=str(e.get("series_number", "")),
                     cmd=e.get("cmd", ""),
                 )
-                for e in raw.get("data", [])
+                for e in batch
             )
             total = int(raw.get("total_items", 0))
-            per_page = int(raw.get("max_page_items", total)) or total
-            if per_page == 0 or page * per_page >= total:
+            if not batch or len(episodes) >= total:
                 break
             page += 1
         return episodes
@@ -134,28 +128,10 @@ class VODService:
             for f in raw.get("data", [])
         ]
 
-    def get_stream_url_by_file_id(
-        self, series_id: str, season_id: str, episode_id: str, file_id: str
-    ) -> str:
-        files = self.get_episode_files(series_id, season_id, episode_id)
-        for f in files:
-            if f.id == str(file_id):
-                return self.get_stream_url(f.cmd)
-        raise NotFoundError("file not found")
-
     def get_stream_url(self, cmd: str) -> str:
         raw = self._s.get("vod", "create_link", cmd=cmd)
         if raw.get("error"):
             raise StreamError(raw["error"])
         url = raw.get("cmd", raw.get("url", ""))
         return _clean_url(url)
-
-    def get_stream_url_by_first_file(self, series_id: str, season_id: str, episode_id: str) -> str:
-        files = self.get_episode_files(series_id, season_id, episode_id)
-        if not files:
-            raise NotFoundError("no files for episode")
-        return self.get_stream_url(files[0].cmd)
-
-    def get_stream_url_by_content_id(self, content_id: str) -> str:
-        return self.get_stream_url(f"/media/{content_id}.mpg")
 

@@ -1,18 +1,11 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 from .models import Genre, Channel, PagedResult
-from .exceptions import NotFoundError, STBError, StreamError
-from ._http import _as_list
+from .exceptions import STBError, StreamError
+from ._http import _as_list, _clean_url
 
 if TYPE_CHECKING:
     from ._http import STBSession
-
-
-def _clean_url(url: str) -> str:
-    for prefix in ("ffmpeg ", "auto "):
-        if url.startswith(prefix):
-            url = url[len(prefix):]
-    return url
 
 
 class ITVService:
@@ -58,6 +51,7 @@ class ITVService:
                 genre_id=str(c.get("tv_genre_id", "")),
                 hd=bool(c.get("hd", False)),
                 censored=bool(c.get("censored", False)),
+                xmltv_id=str(c.get("xmltv_id", "")),
             )
             for c in raw.get("data", [])
         ]
@@ -68,6 +62,23 @@ class ITVService:
             per_page=int(raw.get("max_page_items", len(items))),
         )
 
+    def get_all_channels(self) -> list[Channel]:
+        raw = self._s.get("itv", "get_all_channels")
+        return [
+            Channel(
+                id=str(c["id"]),
+                number=str(c.get("number", "")),
+                name=c.get("name", ""),
+                cmd=c.get("cmd", ""),
+                logo=c.get("logo", ""),
+                genre_id=str(c.get("tv_genre_id", "")),
+                hd=bool(c.get("hd", False)),
+                censored=bool(c.get("censored", False)),
+                xmltv_id=str(c.get("xmltv_id", "")),
+            )
+            for c in _as_list(raw)
+        ]
+
     def get_stream_url(self, cmd: str) -> str:
         raw = self._s.get("itv", "create_link", cmd=cmd)
         if raw.get("error"):
@@ -75,13 +86,3 @@ class ITVService:
         url = raw.get("cmd", "")
         return _clean_url(url)
 
-    def get_stream_url_by_id(self, channel_id: str) -> str:
-        page = 1
-        while True:
-            result = self.get_channels(genre_id="*", page=page)
-            for ch in result.items:
-                if ch.id == str(channel_id):
-                    return self.get_stream_url(ch.cmd)
-            if not result.items or page * result.per_page >= result.total:
-                raise NotFoundError("channel not found")
-            page += 1

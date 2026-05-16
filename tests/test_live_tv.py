@@ -1,8 +1,9 @@
 import pytest
 import responses as responses_lib
 from stb_reader._http import STBSession
-from stb_reader.live_tv import ITVService, _clean_url
-from stb_reader.exceptions import NotFoundError, STBError, StreamError
+from stb_reader._http import _clean_url
+from stb_reader.live_tv import ITVService
+from stb_reader.exceptions import STBError, StreamError
 from tests.conftest import BASE_URL, MAC, PORTAL_URL
 
 
@@ -71,6 +72,25 @@ def test_get_channels_parses_channels():
     assert result.items[0].hd is True
 
 
+# --- get_all_channels ---
+
+@responses_lib.activate
+def test_get_all_channels_returns_list_from_single_call():
+    channels = [
+        {"id": "1", "number": "1", "name": "BBC", "cmd": "http://bbc", "logo": "", "tv_genre_id": "1", "hd": False, "censored": False, "xmltv_id": "bbc1.uk"},
+        {"id": "2", "number": "2", "name": "ITV", "cmd": "http://itv", "logo": "", "tv_genre_id": "1", "hd": True, "censored": False, "xmltv_id": ""},
+    ]
+    responses_lib.add(responses_lib.GET, PORTAL_URL, json={"js": channels})
+    svc = ITVService(_make_session())
+    result = svc.get_all_channels()
+    assert len(result) == 2
+    assert len(responses_lib.calls) == 1
+    assert result[0].name == "BBC"
+    assert result[0].xmltv_id == "bbc1.uk"
+    assert result[1].hd is True
+    assert result[1].xmltv_id == ""
+
+
 # --- get_stream_url ---
 
 @responses_lib.activate
@@ -93,37 +113,3 @@ def test_get_stream_url_raises_stream_error_on_error_field():
     svc = ITVService(_make_session())
     with pytest.raises(StreamError):
         svc.get_stream_url("http://x")
-
-
-# --- get_stream_url_by_id ---
-
-@responses_lib.activate
-def test_get_stream_url_by_id_finds_channel():
-    channels = [
-        {"id": "42", "number": "1", "name": "BBC", "cmd": "ffmpeg http://bbc", "logo": "", "tv_genre_id": "1", "hd": False, "censored": False}
-    ]
-    responses_lib.add(
-        responses_lib.GET, PORTAL_URL,
-        json={"js": {"data": channels, "total_items": 1, "max_page_items": 14}},
-    )
-    responses_lib.add(
-        responses_lib.GET, PORTAL_URL,
-        json={"js": {"cmd": "ffmpeg http://bbc", "error": ""}},
-    )
-    svc = ITVService(_make_session())
-    url = svc.get_stream_url_by_id("42")
-    assert url == "http://bbc"
-
-
-@responses_lib.activate
-def test_get_stream_url_by_id_raises_when_not_found():
-    channels = [
-        {"id": "1", "number": "1", "name": "CH1", "cmd": "x", "logo": "", "tv_genre_id": "1", "hd": False, "censored": False}
-    ]
-    responses_lib.add(
-        responses_lib.GET, PORTAL_URL,
-        json={"js": {"data": channels, "total_items": 1, "max_page_items": 14}},
-    )
-    svc = ITVService(_make_session())
-    with pytest.raises(NotFoundError, match="channel not found"):
-        svc.get_stream_url_by_id("999")
