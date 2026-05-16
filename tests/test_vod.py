@@ -122,6 +122,24 @@ def test_get_episodes_returns_list(session):
 
 
 @responses_lib.activate
+def test_get_episodes_paginates_when_max_page_items_absent(session):
+    page1 = [{"id": "1", "name": "Ep 1", "series_number": "1", "cmd": ""}]
+    page2 = [{"id": "2", "name": "Ep 2", "series_number": "2", "cmd": ""}]
+    responses_lib.add(
+        responses_lib.GET, PORTAL_URL,
+        json={"js": {"data": page1, "total_items": 2}},
+    )
+    responses_lib.add(
+        responses_lib.GET, PORTAL_URL,
+        json={"js": {"data": page2, "total_items": 2}},
+    )
+    svc = VODService(session)
+    eps = svc.get_episodes("50", "1")
+    assert len(eps) == 2
+    assert len(responses_lib.calls) == 2
+
+
+@responses_lib.activate
 def test_get_episodes_paginates_all_pages(session):
     page1 = [{"id": str(i), "name": f"Ep {i}", "series_number": str(i), "cmd": ""} for i in range(1, 15)]
     page2 = [{"id": str(i), "name": f"Ep {i}", "series_number": str(i), "cmd": ""} for i in range(15, 21)]

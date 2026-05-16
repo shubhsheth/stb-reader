@@ -101,6 +101,7 @@ class VODService:
                 episode_id=0,
                 p=page,
             )
+            batch = raw.get("data", [])
             episodes.extend(
                 Episode(
                     id=str(e["id"]),
@@ -108,11 +109,10 @@ class VODService:
                     series_number=str(e.get("series_number", "")),
                     cmd=e.get("cmd", ""),
                 )
-                for e in raw.get("data", [])
+                for e in batch
             )
             total = int(raw.get("total_items", 0))
-            per_page = int(raw.get("max_page_items", total)) or total
-            if per_page == 0 or page * per_page >= total:
+            if not batch or len(episodes) >= total:
                 break
             page += 1
         return episodes
