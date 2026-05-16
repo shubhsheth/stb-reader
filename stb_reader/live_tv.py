@@ -72,8 +72,10 @@ class ITVService:
         raw = self._s.get("itv", "create_link", cmd=cmd)
         if raw.get("error"):
             raise StreamError(raw["error"])
-        url = raw.get("cmd", "")
-        return _clean_url(url)
+        url = _clean_url(raw.get("cmd", ""))
+        if url.startswith("?"):
+            url = f"{self._s.base_url}/{self._s.portal_path}{url}"
+        return url
 
     def get_stream_url_by_id(self, channel_id: str) -> str:
         page = 1

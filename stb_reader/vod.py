@@ -148,8 +148,10 @@ class VODService:
         raw = self._s.get("vod", "create_link", cmd=cmd)
         if raw.get("error"):
             raise StreamError(raw["error"])
-        url = raw.get("cmd", raw.get("url", ""))
-        return _clean_url(url)
+        url = _clean_url(raw.get("cmd", raw.get("url", "")))
+        if url.startswith("?"):
+            url = f"{self._s.base_url}/{self._s.portal_path}{url}"
+        return url
 
     def get_stream_url_by_first_file(self, series_id: str, season_id: str, episode_id: str) -> str:
         files = self.get_episode_files(series_id, season_id, episode_id)
