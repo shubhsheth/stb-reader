@@ -29,7 +29,7 @@ def list_cmd(category_id: str, page: int) -> None:
         client = get_client()
         result = client.vod.get_content(category_id=category_id, page=page)
         rows = [
-            [c.id, c.name, c.year, c.genres, "yes" if c.is_series else "", c.cmd]
+            [c.id, c.name, c.year, c.genres, "yes" if c.is_series else "", "" if c.is_series else c.cmd]
             for c in result.items
         ]
         total_pages = -(-result.total // result.per_page) if result.per_page else 1
