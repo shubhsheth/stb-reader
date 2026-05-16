@@ -62,6 +62,23 @@ class ITVService:
             per_page=int(raw.get("max_page_items", len(items))),
         )
 
+    def get_all_channels(self) -> list[Channel]:
+        raw = self._s.get("itv", "get_all_channels")
+        return [
+            Channel(
+                id=str(c["id"]),
+                number=str(c.get("number", "")),
+                name=c.get("name", ""),
+                cmd=c.get("cmd", ""),
+                logo=c.get("logo", ""),
+                genre_id=str(c.get("tv_genre_id", "")),
+                hd=bool(c.get("hd", False)),
+                censored=bool(c.get("censored", False)),
+                xmltv_id=str(c.get("xmltv_id", "")),
+            )
+            for c in _as_list(raw)
+        ]
+
     def get_stream_url(self, cmd: str) -> str:
         raw = self._s.get("itv", "create_link", cmd=cmd)
         if raw.get("error"):
