@@ -111,57 +111,36 @@ def test_get_seasons_returns_list(session):
 # --- get_episodes ---
 
 @responses_lib.activate
-def test_get_episodes_returns_list(session):
+def test_get_episodes_returns_paged_result(session):
     responses_lib.add(
         responses_lib.GET, PORTAL_URL,
         json={"js": {"data": [{"id": "99", "name": "Pilot", "series_number": "1", "cmd": "http://ep"}],
-                     "total_items": 1, "max_page_items": 14}},
+                     "total_items": 50, "max_page_items": 14}},
     )
     svc = VODService(session)
-    eps = svc.get_episodes("50", "1")
-    assert len(eps) == 1
-    assert eps[0].name == "Pilot"
-    assert eps[0].cmd == "http://ep"
+    result = svc.get_episodes("50", "1")
+    assert len(result.items) == 1
+    assert result.items[0].name == "Pilot"
+    assert result.items[0].cmd == "http://ep"
+    assert result.total == 50
+    assert result.per_page == 14
+    assert result.page == 1
+    assert len(responses_lib.calls) == 1
     url = responses_lib.calls[0].request.url
     assert "movie_id=50" in url
     assert "season_id=1" in url
 
 
 @responses_lib.activate
-def test_get_episodes_paginates_when_max_page_items_absent(session):
-    page1 = [{"id": "1", "name": "Ep 1", "series_number": "1", "cmd": ""}]
-    page2 = [{"id": "2", "name": "Ep 2", "series_number": "2", "cmd": ""}]
+def test_get_episodes_passes_page_param(session):
     responses_lib.add(
         responses_lib.GET, PORTAL_URL,
-        json={"js": {"data": page1, "total_items": 2}},
-    )
-    responses_lib.add(
-        responses_lib.GET, PORTAL_URL,
-        json={"js": {"data": page2, "total_items": 2}},
+        json={"js": {"data": [], "total_items": 50, "max_page_items": 14}},
     )
     svc = VODService(session)
-    eps = svc.get_episodes("50", "1")
-    assert len(eps) == 2
-    assert len(responses_lib.calls) == 2
-
-
-@responses_lib.activate
-def test_get_episodes_paginates_all_pages(session):
-    page1 = [{"id": str(i), "name": f"Ep {i}", "series_number": str(i), "cmd": ""} for i in range(1, 15)]
-    page2 = [{"id": str(i), "name": f"Ep {i}", "series_number": str(i), "cmd": ""} for i in range(15, 21)]
-    responses_lib.add(
-        responses_lib.GET, PORTAL_URL,
-        json={"js": {"data": page1, "total_items": 20, "max_page_items": 14}},
-    )
-    responses_lib.add(
-        responses_lib.GET, PORTAL_URL,
-        json={"js": {"data": page2, "total_items": 20, "max_page_items": 14}},
-    )
-    svc = VODService(session)
-    eps = svc.get_episodes("50", "1")
-    assert len(eps) == 20
-    assert len(responses_lib.calls) == 2
-    assert "p=2" in responses_lib.calls[1].request.url
+    result = svc.get_episodes("50", "1", page=3)
+    assert result.page == 3
+    assert "p=3" in responses_lib.calls[0].request.url
 
 
 # --- get_stream_url ---

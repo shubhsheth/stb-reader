@@ -99,6 +99,7 @@ def test_get_stream_url_strips_prefix():
         responses_lib.GET, PORTAL_URL,
         json={"js": {"cmd": "ffmpeg http://cdn.test/stream", "error": ""}},
     )
+    responses_lib.add(responses_lib.GET, "http://cdn.test/stream", body=b"")
     svc = ITVService(_make_session())
     url = svc.get_stream_url("ffmpeg http://cdn.test/stream")
     assert url == "http://cdn.test/stream"

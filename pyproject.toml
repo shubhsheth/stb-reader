@@ -10,7 +10,7 @@ readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "shubhsheth" }]
 requires-python = ">=3.11"
-dependencies = ["requests"]
+dependencies = ["requests", "click"]
 keywords = ["stb", "stalker", "ministra", "iptv", "portal"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -22,6 +22,9 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Multimedia :: Video",
 ]
+
+[project.scripts]
+stb = "stb_reader.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/shubhsheth/stb-reader"
