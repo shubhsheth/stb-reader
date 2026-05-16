@@ -83,6 +83,12 @@ class ITVService:
         raw = self._s.get("itv", "create_link", cmd=cmd)
         if raw.get("error"):
             raise StreamError(raw["error"])
-        url = raw.get("cmd", "")
-        return _clean_url(url)
+        url = _clean_url(raw.get("cmd", ""))
+        try:
+            resp = self._s.open_url(url)
+            stream_url = str(resp.url)
+            resp.close()
+            return stream_url
+        except StreamError:
+            return url
 

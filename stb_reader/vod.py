@@ -1,4 +1,5 @@
 from __future__ import annotations
+import time
 from typing import TYPE_CHECKING
 from .models import Category, Content, Season, Episode, EpisodeFile, PagedResult
 from .exceptions import STBError, StreamError
@@ -80,36 +81,37 @@ class VODService:
             for s in raw.get("data", [])
         ]
 
-    def get_episodes(self, series_id: str, season_id: str, delay_s: float = 0) -> list[Episode]:
-        import time
-        episodes: list[Episode] = []
-        page = 1
-        while True:
-            if delay_s > 0 and page > 1:
-                time.sleep(delay_s)
-            raw = self._s.get(
-                "vod",
-                "get_ordered_list",
-                movie_id=series_id,
-                season_id=season_id,
-                episode_id=0,
-                p=page,
-            )
-            batch = raw.get("data", [])
-            episodes.extend(
+    def get_episodes(self, series_id: str, season_id: str, page: int = 1) -> PagedResult[Episode]:
+        raw = self._s.get(
+            "vod",
+            "get_ordered_list",
+            movie_id=series_id,
+            season_id=season_id,
+            episode_id=0,
+            p=page,
+        )
+        items = []
+        for e in raw.get("data", []):
+            episode_id = str(e["id"])
+            cmd = str(e.get("cmd", ""))
+            if not cmd:
+                files = self.get_episode_files(series_id, season_id, episode_id)
+                cmd = files[0].cmd if files else ""
+            items.append(
                 Episode(
-                    id=str(e["id"]),
+                    id=episode_id,
                     name=e.get("name", ""),
                     series_number=str(e.get("series_number", "")),
-                    cmd=e.get("cmd", ""),
+                    cmd=cmd,
                 )
-                for e in batch
             )
-            total = int(raw.get("total_items", 0))
-            if not batch or len(episodes) >= total:
-                break
-            page += 1
-        return episodes
+            time.sleep(0.1)  # Add a 100ms delay between iterations
+        return PagedResult(
+            items=items,
+            total=int(raw.get("total_items", 0)),
+            page=page,
+            per_page=int(raw.get("max_page_items", len(items))),
+        )
 
     def get_episode_files(self, series_id: str, season_id: str, episode_id: str) -> list[EpisodeFile]:
         raw = self._s.get(
