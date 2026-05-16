@@ -59,21 +59,19 @@ and the library works correctly against stricter portals that check device param
   `session.token` (some portals issue a refreshed token in the profile response).
 
 ### Additions
-- **FR-8** `ITVService.get_all_channels() -> list[Channel]` calls the portal's
-  `get_all_channels` action and returns all channels without pagination.
+- **FR-8** `ITVService.get_all_channels() -> list[Channel]` wraps the portal's
+  `get_all_channels` action (a single API call the portal assembles server-side)
+  and returns the result as `list[Channel]`. No client-side loop or pagination.
 - **FR-9** `Channel` model gains a `xmltv_id: str` field (default `""`). Both
   `get_channels()` and `get_all_channels()` populate it from the response.
 - **FR-10** `_clean_url()` is moved from `live_tv.py` to `_http.py`. `vod.py` and
   `live_tv.py` import it from there.
 
-### Nice-to-have
-- **FR-11** `Content` model gains five additional fields populated from the VOD
-  `get_ordered_list` response:
-  - `rating_kinopoisk: str` (default `""`)
-  - `director: str` (default `""`)
-  - `actors: str` (default `""`)
-  - `tmdb_id: str` (default `""`)
-  - `hd: bool` (default `False`)
+### Roadmap (out of scope for this spec)
+- Allow callers to configure which response fields are mapped onto `Content` and
+  `Channel` objects (e.g. via field-include sets on `STBClient`). This would replace
+  ad-hoc model expansion for fields like `rating_kinopoisk`, `director`, `actors`,
+  `tmdb_id`, `hd` that are present on some portals and absent on others.
 
 ---
 
@@ -91,11 +89,12 @@ and the library works correctly against stricter portals that check device param
 ## Out of Scope
 
 - EPG / program guide support (`get_epg_info`) — confirmed gap but separate feature.
-- Concurrent / parallel page fetching (ThreadPoolExecutor approach from sources) —
-  out of scope for this iteration.
+- Concurrent / parallel page fetching — the library is sequential; callers own loops.
 - Portal path auto-detection (trying multiple portal path variants) — separate concern.
 - Any change to the `PagedResult` model or pagination API for callers.
 - Changes to `get_seasons()` or `get_episode_files()` beyond what FR-1 touches.
+- Expanded `Content` model fields (`rating_kinopoisk`, `director`, `actors`, `tmdb_id`,
+  `hd`) — deferred to the field-configuration roadmap item above.
 
 ---
 
@@ -212,14 +211,13 @@ No comments unless the why is non-obvious. No docstrings.
 
 ## Success Criteria
 
-- All 10 functional requirements have passing tests.
+- All 9 functional requirements (FR-1 through FR-10) have passing tests.
 - `uv run --extra test pytest tests/ -v` passes with zero failures.
 - `get_categories()` returns categories including those with `censored=True`.
 - `get_episodes()` with a two-page mocked response returns episodes from both pages.
 - `get_profile()` request includes `device_id`, `device_id2`, and `signature` params.
-- `get_all_channels()` returns a `list[Channel]` from a single API call.
+- `get_all_channels()` returns a `list[Channel]` from a single API call (no loop).
 - `Channel` objects have a `xmltv_id` attribute.
 - `_clean_url` is importable from `stb_reader._http`.
 - No import of `_clean_url` from `live_tv` remains in `vod.py`.
 - None of the removed methods appear anywhere in `stb_reader/`.
-- `Content` objects have `rating_kinopoisk`, `director`, `actors`, `tmdb_id`, `hd`.
