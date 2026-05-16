@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import Response
 
 from ._helpers import stream_response
 
@@ -343,54 +343,3 @@ async def live_stream(
         settings, request, client.live_tv.get_stream_url_by_id, str(stream_id)
     )
 
-
-# ---------------------------------------------------------------------------
-# M3U playlist
-# ---------------------------------------------------------------------------
-
-@router.get("/get.php")
-def m3u_playlist(
-    request: Request,
-    username: str = Query(...),
-    password: str = Query(...),
-    type: str = Query(default="m3u_plus"),
-    output: str = Query(default="ts"),
-) -> PlainTextResponse:
-    settings = request.app.state.settings
-    client = request.app.state.client
-    _check_auth(username, password, settings)
-
-    genres = {g.id: g.title for g in client.live_tv.get_genres()}
-    channels = _collect_all_pages(client.live_tv.get_channels, max_pages=settings.xtream_max_pages)
-    base = str(request.base_url).rstrip("/")
-
-    lines = ["#EXTM3U"]
-    for ch in channels:
-        genre_name = genres.get(ch.genre_id, "")
-        lines.append(
-            f'#EXTINF:-1 tvg-id="" tvg-name="{ch.name}" tvg-logo="{ch.logo}" '
-            f'group-title="{genre_name}",{ch.name}'
-        )
-        lines.append(f"{base}/{username}/{password}/{ch.id}.m3u8")
-
-    return PlainTextResponse("\n".join(lines))
-
-
-# ---------------------------------------------------------------------------
-# XMLTV stub
-# ---------------------------------------------------------------------------
-
-@router.get("/xmltv.php")
-def xmltv(
-    request: Request,
-    username: str = Query(...),
-    password: str = Query(...),
-) -> Response:
-    settings = request.app.state.settings
-    _check_auth(username, password, settings)
-    content = (
-        '<?xml version="1.0" encoding="UTF-8"?>'
-        '<!DOCTYPE tv SYSTEM "xmltv.dtd">'
-        '<tv generator-info-name="stb-reader"></tv>'
-    )
-    return Response(content=content, media_type="application/xml")
