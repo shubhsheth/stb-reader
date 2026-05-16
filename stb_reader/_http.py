@@ -41,7 +41,6 @@ class STBSession:
         self.timezone = timezone
         self.portal_path = portal_path.strip("/")
         self.token = ""
-        self.signature = ""
         self.extra_headers: dict = {}
         self.reauth_fn: Callable[[], None] | None = None
         self._reauth_lock = threading.Lock()
