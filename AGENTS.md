@@ -3,114 +3,98 @@
 ## Build & Setup
 
 ```
-Install library:  pip install -e .
-Install dev deps: pip install -e ".[dev]"
-Run tests:        pytest
-Run with coverage: pytest --cov=stb_reader
-Start server:     uvicorn server.main:app --reload
-Docker build:     docker build -t stb-reader .
-Docker run:       docker run -e STB_URL=... -e STB_MAC=... -p 8000:8000 stb-reader
+Install library:    uv pip install -e .
+Install test deps:  uv pip install -e ".[test]"
+Run tests:          uv run pytest tests/ -v
+Run with coverage:  uv run pytest --cov=stb_reader tests/
+Build distribution: uv build
+Check package:      uv run twine check dist/*
 ```
 
 ## Project Structure
 
 ```
-stb_reader/   Core pip-installable library; no FastAPI dependency
-  client.py   STBClient entry point
-  auth.py     handshake(), get_profile()
-  live_tv.py  ITVService (genres, channels, stream URLs)
-  vod.py      VODService (categories, content, seasons, episodes, streams)
-  models.py   Dataclasses: Genre, Channel, Category, VODItem, etc.
-  _http.py    Low-level requests.Session wrapper with STB headers
-  exceptions.py  STBError, AuthError, StreamError
+stb_reader/        Sole importable package
+  __init__.py      Public API: STBClient, all models, all exceptions
+  client.py        STBClient entry point
+  auth.py          handshake(), get_profile()
+  live_tv.py       ITVService — genres, channels, stream URLs
+  vod.py           VODService — categories, content, seasons, episodes, streams
+  models.py        Dataclasses: Genre, Channel, Category, Content, Season, Episode, EpisodeFile, PagedResult
+  _http.py         STBSession (requests wrapper with STB headers and auto-reauth)
+  exceptions.py    STBError, AuthError, StreamError, NotFoundError
 
-server/       FastAPI + Uvicorn HTTP layer
-  main.py     App factory and lifespan; mounts static/ at /
-  config.py   Environment variable settings
-  db.py       SQLite schema and CRUD for the library
-  sync.py     Portal-walking logic: add_content(), sync_item(), add_or_sync_content(), delete_content()
-  routes/     live_tv.py, vod.py, library.py
-  static/     Frontend assets served at /
-    index.html  Single-page search + library management UI
+tests/             pytest suite; all HTTP mocked via `responses` library
+docs/              STB protocol reference (authentication, live-tv, vod-series)
+spec/              Spec-driven feature specs (NNN-slug/{requirements,plan,implement}.md)
 
-tests/        pytest suite; all HTTP is mocked via `responses` library
-docs/         STB protocol reference (authentication, live-tv, vod-series, library)
-spec/         Spec-driven feature specs (NNN-slug/{requirements,plan,implement}.md)
+.github/
+  workflows/
+    publish.yml    Publishes to PyPI on v* tag push (requires PYPI_TOKEN secret)
+
+pyproject.toml     Package metadata and hatchling build config
+README.md          Installation and quick-start documentation
+LICENSE            MIT licence
 ```
 
-## Frontend
+## Public API
 
-Single-page UI served at `GET /`. Plain HTML/CSS/JS — no build step, no external dependencies.
+```python
+from stb_reader import STBClient
 
-- Search VOD content via the search bar (calls `GET /vod/search`)
-- Filter by All / Movies / Series
-- Add or Remove items from the library with one click
-- Paginated results (25 per page)
+client = STBClient(base_url="http://portal.example.com", mac="00:1A:79:XX:XX:XX")
+client.authenticate()
 
-## REST API Endpoints
+# Live TV
+genres   = client.live_tv.get_genres()
+channels = client.live_tv.get_channels(genre_id="*", page=1)
+url      = client.live_tv.get_stream_url(channels.items[0].cmd)
 
-```
-GET /                                           Web UI (static HTML)
-GET /health                                     Health check
-GET /live-tv/genres                             List channel genres
-GET /live-tv/channels                           Paginated channel list
-GET /live-tv/channels/{id}/stream               302 redirect to stream URL
-GET /vod/categories                             List VOD categories
-GET /vod/content                                            Paginated VOD content
-GET /vod/content/{id}/seasons                               Series seasons
-GET /vod/content/{id}/seasons/{sid}/episodes                Season episodes
-GET /vod/content/{id}/seasons/{sid}/episodes/{eid}/stream   302 redirect to first file stream
-GET /vod/content/{id}/seasons/{sid}/episodes/{eid}/files    Episode files (multi-quality)
-GET /vod/content/{id}/seasons/{sid}/episodes/{eid}/files/{fid}/stream  302 redirect to file stream
-GET /vod/content/{id}/stream                                302 redirect to movie stream
-GET /vod/content/{id}/screenshot                            302 redirect to poster screenshot URI (404 if none)
+# VOD
+cats     = client.vod.get_categories()
+content  = client.vod.get_content(category_id="*", page=1)
+seasons  = client.vod.get_seasons(series_id="123")
+episodes = client.vod.get_episodes(series_id="123", season_id=seasons[0].id)
+url      = client.vod.get_stream_url_by_first_file("123", seasons[0].id, episodes[0].id)
 ```
 
-## Library Endpoints
-
-```
-POST   /library/content/{content_id}   Add (or sync if already present) a single item; 202, 404 if unknown
-DELETE /library/content/{content_id}   Remove item and delete .strm files; 204, 404 if not in library
-POST   /library/category/{category_id} Add-or-sync all content in a category; sets category in_library flag; 202, 404 if unknown
-DELETE /library/category/{category_id} Remove all content in a category and clear category in_library flag; 204, 404 if unknown
-GET    /library                        List all library items (each includes strm_count)
-POST   /library/sync                   Sync all series in library (background task); 204
-```
-
-## Library Environment Variables
-
-```
-STRM_OUTPUT_DIR          Root directory where .strm files are written (required)
-STRM_SERVER_BASE_URL     Base URL embedded in .strm files, reachable by Jellyfin at playback time (required)
-STRM_DATA_DIR            Directory for the SQLite library database; DB created at {STRM_DATA_DIR}/data.db (required)
-STRM_SYNC_INTERVAL_HOURS Hours between automatic background syncs (default: 6; 0 = disabled)
-```
-
-See `docs/library.md` for deployment details including Docker service name vs LAN IP vs reverse proxy.
+All models and exceptions are importable directly from `stb_reader`:
+`Genre`, `Channel`, `Category`, `Content`, `Season`, `Episode`, `EpisodeFile`, `PagedResult`,
+`STBError`, `AuthError`, `StreamError`, `NotFoundError`
 
 ## Code Style
 
 - Python 3.11+; snake_case everywhere
 - Dataclasses for all domain models (`stb_reader/models.py`)
 - Full type hints on every function signature
-- Pydantic only in the server layer — never in `stb_reader/`
-- No async in `stb_reader/`; server layer may use async
+- No Pydantic, no async in `stb_reader/`
 
 ## Testing
 
 - Mock all HTTP with `responses` library — never make real network calls in tests
-- Integration tests use FastAPI `TestClient`
 - Target: 90%+ coverage on `stb_reader/`
-- Run `pytest` before every commit
+- Run `uv run pytest tests/ -v` before every commit
+- No test file may import from `server.*`
+
+## Publishing
+
+Releases publish to PyPI automatically when a `v*` tag is pushed:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The `PYPI_TOKEN` secret must be configured in the GitHub repository settings.
 
 ## Boundaries
 
-- **Always:** typed signatures, fail fast on missing env vars, run pytest before commits
-- **Ask first:** new third-party dependencies, REST URL shape changes, server-level auth
+- **Always:** typed signatures, run pytest before commits, run `uv build` to verify packaging
+- **Ask first:** new runtime dependencies, changing the public `__init__.py` API, adding new STBClient methods
 - **Never:** real HTTP calls in tests, credentials in source, async in `stb_reader/` core
 
 ## Documentation
 
 - `docs/` contains protocol-level reference for the Ministra/Stalker STB API
-- Update the relevant `docs/` file when adding or changing endpoints or protocol behavior
-- Update this file (`AGENTS.md`) when adding commands, endpoints, models, or boundaries
+- Update the relevant `docs/` file when changing protocol behavior
+- Update this file (`AGENTS.md`) when adding commands, models, or boundaries
