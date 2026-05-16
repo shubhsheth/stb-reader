@@ -87,6 +87,19 @@ All exceptions are importable from `stb_reader`:
 | `StreamError` | Portal rejects a stream request |
 | `NotFoundError` | Requested item not found |
 
+## Documentation
+
+Full guides are in [`docs/guide/`](docs/guide/):
+
+- [Getting started](docs/guide/getting-started.md) — installation, configuration, first call
+- [Authentication](docs/guide/authentication.md) — token lifecycle, auto-reauth, error handling
+- [Live TV](docs/guide/live-tv.md) — genres, channels, stream URLs
+- [VOD — Movies](docs/guide/vod.md) — categories, content listing, movie streams
+- [Series](docs/guide/series.md) — seasons, episodes, quality selection
+- [Pagination](docs/guide/pagination.md) — `PagedResult`, fetch-all-pages pattern
+- [Error handling](docs/guide/error-handling.md) — all exceptions, recovery patterns
+- [API reference](docs/guide/api-reference.md) — complete method, model, and exception reference
+
 ## License
 
 MIT
