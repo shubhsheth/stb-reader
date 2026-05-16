@@ -62,7 +62,7 @@ class STBSession:
         self._cookies["token"] = self.token
         headers = {**self._base_headers, "Authorization": f"Bearer {self.token}", **self.extra_headers}
         resp = self._session.get(url, params=query, headers=headers, cookies=self._cookies, timeout=_REQUEST_TIMEOUT)
-        logger.debug("Response [%s %s]: %s", resp.status_code, action, resp.text[:500])
+        logger.debug("Response [%s %s]: %s", resp.status_code, action, resp.text)
         if not resp.ok:
             raise STBError(f"HTTP {resp.status_code}: {resp.text[:200]}")
         if _is_auth_failure(resp.text):
