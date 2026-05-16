@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 from .models import Genre, Channel, PagedResult
-from .exceptions import NotFoundError, STBError, StreamError
+from .exceptions import STBError, StreamError
 from ._http import _as_list
 
 if TYPE_CHECKING:
@@ -75,15 +75,3 @@ class ITVService:
         url = raw.get("cmd", "")
         return _clean_url(url)
 
-    def get_stream_url_by_id(self, channel_id: str) -> str:
-        page = 1
-        seen = 0
-        while True:
-            result = self.get_channels(genre_id="*", page=page)
-            for ch in result.items:
-                if ch.id == str(channel_id):
-                    return self.get_stream_url(ch.cmd)
-            seen += len(result.items)
-            if not result.items or seen >= result.total:
-                raise NotFoundError("channel not found")
-            page += 1
