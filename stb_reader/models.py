@@ -22,6 +22,7 @@ class Channel:
     genre_id: str
     hd: bool
     censored: bool
+    xmltv_id: str = ""
 
 
 @dataclass

@@ -51,6 +51,7 @@ class ITVService:
                 genre_id=str(c.get("tv_genre_id", "")),
                 hd=bool(c.get("hd", False)),
                 censored=bool(c.get("censored", False)),
+                xmltv_id=str(c.get("xmltv_id", "")),
             )
             for c in raw.get("data", [])
         ]
