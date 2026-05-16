@@ -91,6 +91,7 @@ All exceptions are importable from `stb_reader`:
 
 Full guides are in [`docs/guide/`](docs/guide/):
 
+- [CLI reference](docs/guide/cli.md) — `stb` command-line tool
 - [Getting started](docs/guide/getting-started.md) — installation, configuration, first call
 - [Authentication](docs/guide/authentication.md) — token lifecycle, auto-reauth, error handling
 - [Live TV](docs/guide/live-tv.md) — genres, channels, stream URLs

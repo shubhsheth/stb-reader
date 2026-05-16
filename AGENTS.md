@@ -25,7 +25,8 @@ stb_reader/        Sole importable package
   exceptions.py    STBError, AuthError, StreamError, NotFoundError
 
 tests/             pytest suite; all HTTP mocked via `responses` library
-docs/              STB protocol reference (authentication, live-tv, vod-series)
+docs/protocol/     STB protocol reference (authentication, live-tv, vod-series)
+docs/guide/        User-facing guides (cli.md)
 spec/              Spec-driven feature specs (NNN-slug/{requirements,plan,implement}.md)
 
 .github/
@@ -95,6 +96,7 @@ The `PYPI_TOKEN` secret must be configured in the GitHub repository settings.
 
 ## Documentation
 
-- `docs/` contains protocol-level reference for the Ministra/Stalker STB API
-- Update the relevant `docs/` file when changing protocol behavior
+- `docs/protocol/` contains protocol-level reference for the Ministra/Stalker STB API
+- `docs/guide/` contains user-facing guides (CLI, library usage)
+- Update the relevant `docs/protocol/` file when changing protocol behavior
 - Update this file (`AGENTS.md`) when adding commands, models, or boundaries
