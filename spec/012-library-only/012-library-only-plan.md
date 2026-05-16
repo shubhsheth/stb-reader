@@ -94,7 +94,48 @@ Verify: run the command above
 
 ---
 
-### Task 5 — Run full test suite and confirm green  
+### Task 5 — Add PyPI packaging metadata  
+**Scope: S** (one file, one new file)  
+**Files:** `pyproject.toml`, `README.md` (new)
+
+Add the metadata PyPI requires:
+- `[project]` fields: `description`, `license`, `authors`, `keywords`, `classifiers`, `urls` (Homepage, Repository)
+- `[project.urls]` section
+- Create a `README.md` that becomes the PyPI long description (reference it via `readme = "README.md"` in `[project]`)
+
+README must cover: install instructions (`pip install stb-reader`), quick-start code example showing `STBClient` usage, and a brief description of what the library does.
+
+Acceptance criteria:
+- `uv build` produces a `.tar.gz` and `.whl` in `dist/`
+- `twine check dist/*` passes with no errors
+- PyPI classifiers include Python version and licence
+
+Verify: `uv build && uv run twine check dist/*`
+
+---
+
+### Task 6 — Add GitHub Actions publish workflow  
+**Scope: S** (one new file)  
+**File:** `.github/workflows/publish.yml`
+
+Trigger: push of a `v*` tag (e.g. `v0.1.0`).
+
+Steps:
+1. Checkout
+2. Set up Python + uv
+3. `uv build`
+4. Publish to PyPI using `uv publish` (uses `PYPI_TOKEN` repository secret via `UV_PUBLISH_TOKEN` env var)
+
+Acceptance criteria:
+- Workflow file is valid YAML
+- Uses `uv publish` (not twine) for publishing
+- Only triggers on version tags, not every push
+
+Verify: `python -c "import yaml; yaml.safe_load(open('.github/workflows/publish.yml'))"` exits 0
+
+---
+
+### Task 7 — Run full test suite and confirm green  
 **Scope: XS** (no code changes, verify only)
 
 ```
@@ -114,19 +155,21 @@ Task 1 (delete server/)
     ↓
 Task 2 (clean tests — server must be gone first so we can grep cleanly)
     ↓
-Task 3 (pyproject.toml — independent but logically after scope is clear)
-Task 4 (public API — independent)
+Task 3 (pyproject.toml — strip server deps)
+Task 4 (public API — expand __init__.py)
     ↓
-Task 5 (verify — must run after all changes)
+Task 5 (PyPI metadata — depends on Task 3 having clean pyproject.toml)
+Task 6 (GitHub Actions — independent of library changes)
+    ↓
+Task 7 (verify — must run after all changes)
 ```
 
-Tasks 3 and 4 can be done in parallel after Task 2.
+Tasks 3 and 4 can be done in parallel after Task 2.  
+Tasks 5 and 6 can be done in parallel after Task 3.
 
 ---
 
 ## Out of scope
 
 - Adding new library methods not already present
-- Publishing to PyPI
-- Writing a README / docs update (separate task if wanted)
 - Async support
