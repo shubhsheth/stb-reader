@@ -11,11 +11,19 @@ def main() -> None:
 
 @main.command("init")
 def init_cmd() -> None:
-    """Save portal URL and MAC address to ~/.stb/config."""
-    url = click.prompt("Portal URL")
+    """Save portal connection settings to ~/.stb/config."""
+    url = click.prompt("Portal URL (no port)")
+    port = click.prompt("Port", default="")
     mac = click.prompt("MAC address")
+    serial = click.prompt("Serial", default="000000000000")
+    lang = click.prompt("Language", default="en")
+    timezone = click.prompt("Timezone", default="Europe/London")
     portal_path = click.prompt("Portal path", default="stalker_portal/c/portal.php")
-    save_config({"url": url.rstrip("/"), "mac": mac, "portal_path": portal_path})
+    cfg: dict = {"url": url.rstrip("/"), "mac": mac, "serial": serial,
+                 "lang": lang, "timezone": timezone, "portal_path": portal_path}
+    if port:
+        cfg["port"] = port
+    save_config(cfg)
     click.echo(f"Config saved to {CONFIG_PATH}")
 
 

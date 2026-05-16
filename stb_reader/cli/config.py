@@ -19,9 +19,13 @@ def load_config() -> dict:
 
 def get_client() -> STBClient:
     cfg = load_config()
-    kwargs = {"base_url": cfg["url"], "mac": cfg["mac"]}
-    if "portal_path" in cfg:
-        kwargs["portal_path"] = cfg["portal_path"]
+    base_url = cfg["url"]
+    if cfg.get("port"):
+        base_url = f"{base_url}:{cfg['port']}"
+    kwargs: dict = {"base_url": base_url, "mac": cfg["mac"]}
+    for key in ("serial", "lang", "timezone", "portal_path"):
+        if key in cfg:
+            kwargs[key] = cfg[key]
     client = STBClient(**kwargs)
     client.authenticate()
     return client
