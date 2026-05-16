@@ -1,5 +1,4 @@
 from __future__ import annotations
-import re
 from typing import TYPE_CHECKING
 from .models import Category, Content, Season, Episode, EpisodeFile, PagedResult
 from .exceptions import STBError, StreamError
@@ -8,9 +7,6 @@ from .live_tv import _clean_url
 
 if TYPE_CHECKING:
     from ._http import STBSession
-
-
-ADULT_TERMS = re.compile(r"adult|18\+", re.IGNORECASE)
 
 
 class VODService:
@@ -27,7 +23,6 @@ class VODService:
                 censored=bool(c.get("censored", False)),
             )
             for c in _as_list(data)
-            if not ADULT_TERMS.search(c.get("title", ""))
         ]
 
     def get_content(

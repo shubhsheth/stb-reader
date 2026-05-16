@@ -8,16 +8,22 @@ from tests.conftest import PORTAL_URL
 # --- get_categories ---
 
 @responses_lib.activate
-def test_get_categories_returns_list(session):
+def test_get_categories_returns_all_including_adult(session):
     responses_lib.add(
         responses_lib.GET, PORTAL_URL,
-        json={"js": [{"id": "5", "title": "Action", "alias": "action", "censored": False}]},
+        json={"js": [
+            {"id": "5", "title": "Action", "alias": "action", "censored": False},
+            {"id": "9", "title": "Adult", "alias": "adult", "censored": True},
+            {"id": "10", "title": "18+", "alias": "18plus", "censored": True},
+        ]},
     )
     svc = VODService(session)
     cats = svc.get_categories()
-    assert len(cats) == 1
-    assert cats[0].id == "5"
-    assert cats[0].title == "Action"
+    assert len(cats) == 3
+    titles = [c.title for c in cats]
+    assert "Adult" in titles
+    assert "18+" in titles
+    assert cats[1].censored is True
 
 
 # --- get_content ---
