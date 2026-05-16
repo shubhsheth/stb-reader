@@ -75,6 +75,22 @@ class STBSession:
         except (KeyError, ValueError):
             raise STBError(f"Invalid JSON response (status {resp.status_code}): {resp.text[:200]}")
 
+    def resolve_stream_url(self, relative_cmd: str) -> str:
+        """Follow a portal-relative ?token= URL with session cookies and return the final CDN URL."""
+        full_url = f"{self.base_url}/{self.portal_path}{relative_cmd}"
+        self._cookies["token"] = self.token
+        resp = self._session.get(
+            full_url,
+            headers=self._base_headers,
+            cookies=self._cookies,
+            stream=True,
+            timeout=_REQUEST_TIMEOUT,
+        )
+        resp.close()
+        if not resp.ok:
+            raise StreamError(f"stream resolve failed ({resp.status_code})")
+        return str(resp.url)
+
     def open_url(self, url: str) -> requests.Response:
         """Fetch a full URL for streaming (no portal auth needed, e.g. CDN URLs)."""
         resp = self._session.get(url, stream=True, timeout=_REQUEST_TIMEOUT)

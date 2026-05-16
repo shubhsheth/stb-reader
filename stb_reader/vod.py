@@ -150,7 +150,7 @@ class VODService:
             raise StreamError(raw["error"])
         url = _clean_url(raw.get("cmd", raw.get("url", "")))
         if url.startswith("?"):
-            url = f"{self._s.base_url}/{self._s.portal_path}{url}"
+            url = self._s.resolve_stream_url(url)
         return url
 
     def get_stream_url_by_first_file(self, series_id: str, season_id: str, episode_id: str) -> str:
