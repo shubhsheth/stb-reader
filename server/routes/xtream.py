@@ -83,7 +83,7 @@ def _category_list(categories) -> list[dict]:
 
 @router.get("/player_api.php")
 @router.post("/player_api.php")
-async def player_api(
+def player_api(
     request: Request,
     username: str = Query(...),
     password: str = Query(...),
@@ -346,7 +346,7 @@ async def live_stream(
 # ---------------------------------------------------------------------------
 
 @router.get("/get.php")
-async def m3u_playlist(
+def m3u_playlist(
     request: Request,
     username: str = Query(...),
     password: str = Query(...),
@@ -378,7 +378,7 @@ async def m3u_playlist(
 # ---------------------------------------------------------------------------
 
 @router.get("/xmltv.php")
-async def xmltv(
+def xmltv(
     request: Request,
     username: str = Query(...),
     password: str = Query(...),
