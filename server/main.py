@@ -14,8 +14,12 @@ from .db import count_vod_content, init_db
 from .vod_sync import run_portal_sync
 
 
+_routes_registered = False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _routes_registered
     settings = Settings()
     logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
     client = STBClient(
@@ -36,15 +40,19 @@ async def lifespan(app: FastAPI):
     db_lock = threading.Lock()
     app.state.db_lock = db_lock
 
-    from .routes.live_tv import router as live_tv_router
-    from .routes.vod import router as vod_router
-    from .routes.library import router as library_router
-    from .routes.proxy import router as proxy_router
-    app.include_router(live_tv_router)
-    app.include_router(vod_router)
-    app.include_router(library_router)
-    app.include_router(proxy_router)
-    app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")
+    if not _routes_registered:
+        from .routes.live_tv import router as live_tv_router
+        from .routes.vod import router as vod_router
+        from .routes.library import router as library_router
+        from .routes.proxy import router as proxy_router
+        from .routes.xtream import router as xtream_router
+        app.include_router(live_tv_router)
+        app.include_router(vod_router)
+        app.include_router(library_router)
+        app.include_router(proxy_router)
+        app.include_router(xtream_router)
+        app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")
+        _routes_registered = True
 
     tasks = []
 

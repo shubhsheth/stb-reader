@@ -22,3 +22,5 @@ class Settings(BaseSettings):
     vod_sync_early_stop_pages: int = 3
     vod_sync_full_sync_days: int = 7
     strm_proxy_streams: bool = False
+    xtream_username: str = "admin"
+    xtream_password: str = "password"
