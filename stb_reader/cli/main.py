@@ -1,3 +1,4 @@
+import logging
 import click
 from .config import load_config, save_config, CONFIG_PATH
 from .live import live
@@ -5,8 +6,12 @@ from .vod import vod
 
 
 @click.group()
-def main() -> None:
+@click.option("--debug", is_flag=True, default=False, help="Print raw portal responses to stderr.")
+@click.pass_context
+def main(ctx: click.Context, debug: bool) -> None:
     """STB portal CLI."""
+    if debug:
+        logging.basicConfig(level=logging.DEBUG, format="%(message)s")
 
 
 @main.command("init")
