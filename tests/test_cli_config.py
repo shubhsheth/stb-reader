@@ -27,15 +27,23 @@ def test_load_config_missing_raises(tmp_config):
 
 def test_init_command_writes_config(tmp_config):
     runner = CliRunner()
-    result = runner.invoke(main, ["init"], input="http://portal.test\nAA:BB:CC:DD:EE:FF\n")
+    result = runner.invoke(main, ["init"], input="http://portal.test\nAA:BB:CC:DD:EE:FF\n\n")
     assert result.exit_code == 0
     data = json.loads(tmp_config.read_text())
     assert data["url"] == "http://portal.test"
     assert data["mac"] == "AA:BB:CC:DD:EE:FF"
+    assert data["portal_path"] == "stalker_portal/c/portal.php"
+
+
+def test_init_custom_portal_path(tmp_config):
+    runner = CliRunner()
+    runner.invoke(main, ["init"], input="http://portal.test\nAA:BB:CC:DD:EE:FF\nstalker_portal/server/load.php\n")
+    data = json.loads(tmp_config.read_text())
+    assert data["portal_path"] == "stalker_portal/server/load.php"
 
 
 def test_init_strips_trailing_slash(tmp_config):
     runner = CliRunner()
-    runner.invoke(main, ["init"], input="http://portal.test/\nAA:BB:CC:DD:EE:FF\n")
+    runner.invoke(main, ["init"], input="http://portal.test/\nAA:BB:CC:DD:EE:FF\n\n")
     data = json.loads(tmp_config.read_text())
     assert data["url"] == "http://portal.test"

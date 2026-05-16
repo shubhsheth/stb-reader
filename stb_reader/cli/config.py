@@ -19,6 +19,9 @@ def load_config() -> dict:
 
 def get_client() -> STBClient:
     cfg = load_config()
-    client = STBClient(base_url=cfg["url"], mac=cfg["mac"])
+    kwargs = {"base_url": cfg["url"], "mac": cfg["mac"]}
+    if "portal_path" in cfg:
+        kwargs["portal_path"] = cfg["portal_path"]
+    client = STBClient(**kwargs)
     client.authenticate()
     return client

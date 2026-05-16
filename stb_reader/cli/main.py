@@ -14,7 +14,8 @@ def init_cmd() -> None:
     """Save portal URL and MAC address to ~/.stb/config."""
     url = click.prompt("Portal URL")
     mac = click.prompt("MAC address")
-    save_config({"url": url.rstrip("/"), "mac": mac})
+    portal_path = click.prompt("Portal path", default="stalker_portal/c/portal.php")
+    save_config({"url": url.rstrip("/"), "mac": mac, "portal_path": portal_path})
     click.echo(f"Config saved to {CONFIG_PATH}")
 
 
