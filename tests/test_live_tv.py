@@ -1,7 +1,8 @@
 import pytest
 import responses as responses_lib
 from stb_reader._http import STBSession
-from stb_reader.live_tv import ITVService, _clean_url
+from stb_reader._http import _clean_url
+from stb_reader.live_tv import ITVService
 from stb_reader.exceptions import STBError, StreamError
 from tests.conftest import BASE_URL, MAC, PORTAL_URL
 

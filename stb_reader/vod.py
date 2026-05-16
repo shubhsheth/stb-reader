@@ -2,8 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from .models import Category, Content, Season, Episode, EpisodeFile, PagedResult
 from .exceptions import STBError, StreamError
-from ._http import _as_list
-from .live_tv import _clean_url
+from ._http import _as_list, _clean_url
 
 if TYPE_CHECKING:
     from ._http import STBSession

@@ -2,17 +2,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from .models import Genre, Channel, PagedResult
 from .exceptions import STBError, StreamError
-from ._http import _as_list
+from ._http import _as_list, _clean_url
 
 if TYPE_CHECKING:
     from ._http import STBSession
-
-
-def _clean_url(url: str) -> str:
-    for prefix in ("ffmpeg ", "auto "):
-        if url.startswith(prefix):
-            url = url[len(prefix):]
-    return url
 
 
 class ITVService:

@@ -21,6 +21,13 @@ def _as_list(data) -> list:
     return data if isinstance(data, list) else data.get("data", [])
 
 
+def _clean_url(url: str) -> str:
+    for prefix in ("ffmpeg ", "auto "):
+        if url.startswith(prefix):
+            url = url[len(prefix):]
+    return url
+
+
 def _is_auth_failure(text: str) -> bool:
     return any(phrase in text for phrase in _AUTH_FAILURE_PHRASES)
 
