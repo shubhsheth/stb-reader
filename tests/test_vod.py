@@ -108,6 +108,31 @@ def test_get_seasons_returns_list(session):
     assert "episode_id=0" in url
 
 
+@responses_lib.activate
+def test_get_seasons_exposes_season_number_and_episode_count(session):
+    responses_lib.add(
+        responses_lib.GET, PORTAL_URL,
+        json={"js": {"data": [{"id": "25805", "name": "Season 3", "video_id": "70639",
+                                "season_number": "3", "season_series": 51}]}},
+    )
+    svc = VODService(session)
+    seasons = svc.get_seasons("50")
+    assert seasons[0].season_number == "3"
+    assert seasons[0].episode_count == 51
+
+
+@responses_lib.activate
+def test_get_seasons_defaults_when_fields_absent(session):
+    responses_lib.add(
+        responses_lib.GET, PORTAL_URL,
+        json={"js": {"data": [{"id": "1", "name": "Season 1", "video_id": "200"}]}},
+    )
+    svc = VODService(session)
+    seasons = svc.get_seasons("50")
+    assert seasons[0].season_number == ""
+    assert seasons[0].episode_count == 0
+
+
 # --- get_episodes ---
 
 @responses_lib.activate
