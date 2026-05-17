@@ -1,5 +1,6 @@
 import json
 import pytest
+from unittest.mock import MagicMock
 from click.testing import CliRunner
 from stb_reader.cli.main import main
 from stb_reader.cli import config as config_mod
@@ -65,8 +66,96 @@ def test_get_client_appends_port(tmp_config, monkeypatch):
 
     def fake_init(self, base_url, mac, **kwargs):
         captured["base_url"] = base_url
+        self._session = MagicMock()
+        self._session.token = "tok"
+        self._session.extra_headers = {}
 
     monkeypatch.setattr("stb_reader.client.STBClient.__init__", fake_init)
     monkeypatch.setattr("stb_reader.client.STBClient.authenticate", lambda self: None)
     config_mod.get_client()
     assert captured["base_url"] == "http://portal.test:8080"
+
+
+# --- token persistence tests ---
+
+def test_save_and_load_token():
+    session = MagicMock()
+    session.token = "abc123"
+    session.extra_headers = {"X-Random": "xyz"}
+    config_mod.save_token(session)
+    result = config_mod.load_token()
+    assert result == {"token": "abc123", "extra_headers": {"X-Random": "xyz"}}
+
+
+def test_load_token_missing():
+    assert config_mod.load_token() is None
+
+
+def test_load_token_corrupt():
+    config_mod.TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    config_mod.TOKEN_PATH.write_text("not json{{")
+    assert config_mod.load_token() is None
+
+
+def test_get_client_saves_token_on_fresh_auth(tmp_config, monkeypatch):
+    config_mod.save_config({"url": "http://portal.test", "mac": "AA:BB:CC:DD:EE:FF"})
+
+    def fake_init(self, base_url, mac, **kwargs):
+        self._session = MagicMock()
+        self._session.token = "fresh-token"
+        self._session.extra_headers = {}
+
+    monkeypatch.setattr("stb_reader.client.STBClient.__init__", fake_init)
+    monkeypatch.setattr("stb_reader.client.STBClient.authenticate", lambda self: None)
+
+    config_mod.get_client()
+
+    saved = config_mod.load_token()
+    assert saved["token"] == "fresh-token"
+
+
+def test_get_client_uses_cached_token(tmp_config, monkeypatch):
+    config_mod.save_config({"url": "http://portal.test", "mac": "AA:BB:CC:DD:EE:FF"})
+    config_mod.TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    config_mod.TOKEN_PATH.write_text(json.dumps({"token": "cached-token", "extra_headers": {"X-Random": "r1"}}))
+
+    auth_called = []
+
+    def fake_init(self, base_url, mac, **kwargs):
+        self._session = MagicMock()
+        self._session.token = ""
+        self._session.extra_headers = {}
+
+    monkeypatch.setattr("stb_reader.client.STBClient.__init__", fake_init)
+    monkeypatch.setattr("stb_reader.client.STBClient.authenticate", lambda self: auth_called.append(1))
+
+    client = config_mod.get_client()
+
+    assert not auth_called
+    assert client._session.token == "cached-token"
+    assert client._session.extra_headers["X-Random"] == "r1"
+
+
+def test_get_client_reauth_updates_token(tmp_config, monkeypatch):
+    config_mod.save_config({"url": "http://portal.test", "mac": "AA:BB:CC:DD:EE:FF"})
+    config_mod.TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    config_mod.TOKEN_PATH.write_text(json.dumps({"token": "old-token", "extra_headers": {}}))
+
+    def fake_init(self, base_url, mac, **kwargs):
+        self._session = MagicMock()
+        self._session.token = "old-token"
+        self._session.extra_headers = {}
+
+    def fake_authenticate(self):
+        self._session.token = "new-token"
+
+    monkeypatch.setattr("stb_reader.client.STBClient.__init__", fake_init)
+    monkeypatch.setattr("stb_reader.client.STBClient.authenticate", fake_authenticate)
+
+    client = config_mod.get_client()
+
+    # reauth_fn fires on token expiry; simulate it
+    client._session.reauth_fn()
+
+    saved = config_mod.load_token()
+    assert saved["token"] == "new-token"
