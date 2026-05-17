@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "stb-reader"
-version = "0.2.0"
+version = "0.2.1"
 description = "Python client library for Ministra/Stalker STB portals"
 readme = "README.md"
 license = { file = "LICENSE" }
