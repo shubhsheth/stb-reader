@@ -77,6 +77,8 @@ class VODService:
                 id=str(s["id"]),
                 name=s.get("name", ""),
                 video_id=str(s.get("video_id", "")),
+                season_number=str(s.get("season_number", "")),
+                episode_count=int(s.get("season_series", 0)),
             )
             for s in raw.get("data", [])
         ]

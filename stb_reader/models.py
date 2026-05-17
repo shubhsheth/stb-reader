@@ -53,6 +53,8 @@ class Season:
     id: str
     name: str
     video_id: str
+    season_number: str
+    episode_count: int
 
 
 @dataclass
