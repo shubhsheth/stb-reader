@@ -1,5 +1,4 @@
 from __future__ import annotations
-import hashlib
 from typing import TYPE_CHECKING
 from .exceptions import AuthError
 
@@ -20,15 +19,7 @@ def handshake(session: "STBSession") -> None:
 
 
 def get_profile(session: "STBSession") -> None:
-    device_id = hashlib.sha256(session.serial.encode()).hexdigest()
-    device_id2 = hashlib.sha256(session.mac.encode()).hexdigest()
-    signature = hashlib.sha256((session.serial + session.mac).encode()).hexdigest()
-    data = session.get(
-        "stb", "get_profile",
-        device_id=device_id,
-        device_id2=device_id2,
-        signature=signature,
-    )
+    data = session.get("stb", "get_profile")
     token = data.get("token", "")
     if token:
         session.token = token
