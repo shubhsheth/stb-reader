@@ -3,7 +3,7 @@ import time
 from typing import TYPE_CHECKING
 from .models import Category, Content, Season, Episode, EpisodeFile, PagedResult
 from .exceptions import STBError, StreamError
-from ._http import _as_list, _clean_url
+from ._http import _as_list, _clean_url, _resolve_image_url
 
 if TYPE_CHECKING:
     from ._http import STBSession
@@ -46,7 +46,7 @@ class VODService:
                 id=str(c["id"]),
                 name=c.get("name", ""),
                 cmd=c.get("cmd", ""),
-                screenshot_uri=c.get("screenshot_uri", ""),
+                screenshot_uri=_resolve_image_url(self._s.base_url, c.get("screenshot_uri", "")),
                 genres=c.get("genres_str", ""),
                 year=str(c.get("year", "")),
                 description=c.get("description", ""),

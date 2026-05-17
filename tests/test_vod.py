@@ -29,6 +29,23 @@ def test_get_categories_returns_all_including_adult(session):
 # --- get_content ---
 
 @responses_lib.activate
+def test_get_content_resolves_relative_screenshot_uri(session):
+    item = {
+        "id": "100", "name": "Inception", "cmd": "http://x",
+        "screenshot_uri": "/stalker_portal/screenshots/100.jpg",
+        "genres_str": "Sci-Fi", "year": "2010", "description": "", "rating_imdb": "8.8",
+        "time": "148", "is_series": False, "fav": False,
+    }
+    responses_lib.add(
+        responses_lib.GET, PORTAL_URL,
+        json={"js": {"data": [item], "total_items": 1, "max_page_items": 14}},
+    )
+    svc = VODService(session)
+    result = svc.get_content()
+    assert result.items[0].screenshot_uri == "http://portal.test/stalker_portal/screenshots/100.jpg"
+
+
+@responses_lib.activate
 def test_get_content_page_is_1_indexed(session):
     responses_lib.add(
         responses_lib.GET, PORTAL_URL,
