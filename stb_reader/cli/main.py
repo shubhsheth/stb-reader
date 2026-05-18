@@ -24,8 +24,14 @@ def init_cmd() -> None:
     lang = click.prompt("Language", default="en")
     timezone = click.prompt("Timezone", default="Europe/London")
     portal_path = click.prompt("Portal path", default="stalker_portal/c/portal.php")
+    device_id = click.prompt("Device ID", default="")
+    device_id2 = click.prompt("Device ID 2", default="")
     cfg: dict = {"url": url.rstrip("/"), "mac": mac, "serial": serial,
                  "lang": lang, "timezone": timezone, "portal_path": portal_path}
+    if device_id:
+        cfg["device_id"] = device_id
+    if device_id2:
+        cfg["device_id2"] = device_id2
     if port:
         cfg["port"] = port
     save_config(cfg)

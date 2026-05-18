@@ -41,7 +41,7 @@ def get_client() -> STBClient:
     if cfg.get("port"):
         base_url = f"{base_url}:{cfg['port']}"
     kwargs: dict = {"base_url": base_url, "mac": cfg["mac"]}
-    for key in ("serial", "lang", "timezone", "portal_path"):
+    for key in ("serial", "lang", "timezone", "portal_path", "device_id", "device_id2"):
         if key in cfg:
             kwargs[key] = cfg[key]
     client = STBClient(**kwargs)
