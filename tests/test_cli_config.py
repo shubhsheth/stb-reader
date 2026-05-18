@@ -26,7 +26,7 @@ def test_load_config_missing_raises(tmp_config):
         config_mod.load_config()
 
 
-_INIT_DEFAULTS = "http://portal.test\n\nAA:BB:CC:DD:EE:FF\n\n\n\n\n"
+_INIT_DEFAULTS = "http://portal.test\n\nAA:BB:CC:DD:EE:FF\n\n\n\n\n\n\n"
 
 
 def test_init_command_writes_config(tmp_config):
@@ -43,19 +43,19 @@ def test_init_command_writes_config(tmp_config):
 
 
 def test_init_with_port(tmp_config):
-    CliRunner().invoke(main, ["init"], input="http://portal.test\n8080\nAA:BB:CC:DD:EE:FF\n\n\n\n\n")
+    CliRunner().invoke(main, ["init"], input="http://portal.test\n8080\nAA:BB:CC:DD:EE:FF\n\n\n\n\n\n\n")
     data = json.loads(tmp_config.read_text())
     assert data["port"] == "8080"
 
 
 def test_init_custom_portal_path(tmp_config):
-    CliRunner().invoke(main, ["init"], input="http://portal.test\n\nAA:BB:CC:DD:EE:FF\n\n\n\nstalker_portal/server/load.php\n")
+    CliRunner().invoke(main, ["init"], input="http://portal.test\n\nAA:BB:CC:DD:EE:FF\n\n\n\nstalker_portal/server/load.php\n\n\n")
     data = json.loads(tmp_config.read_text())
     assert data["portal_path"] == "stalker_portal/server/load.php"
 
 
 def test_init_strips_trailing_slash(tmp_config):
-    CliRunner().invoke(main, ["init"], input="http://portal.test/\n\nAA:BB:CC:DD:EE:FF\n\n\n\n\n")
+    CliRunner().invoke(main, ["init"], input="http://portal.test/\n\nAA:BB:CC:DD:EE:FF\n\n\n\n\n\n\n")
     data = json.loads(tmp_config.read_text())
     assert data["url"] == "http://portal.test"
 
