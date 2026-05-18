@@ -13,8 +13,10 @@ class STBClient:
         lang: str = "en",
         timezone: str = "Europe/London",
         portal_path: str = "stalker_portal/c/portal.php",
+        device_id: str | None = None,
+        device_id2: str | None = None,
     ) -> None:
-        self._session = STBSession(base_url, mac, serial, lang, timezone, portal_path)
+        self._session = STBSession(base_url, mac, serial, lang, timezone, portal_path, device_id, device_id2)
         self._session.reauth_fn = self.authenticate
         self.live_tv = ITVService(self._session)
         self.vod = VODService(self._session)

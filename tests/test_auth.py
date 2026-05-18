@@ -56,6 +56,32 @@ def test_authenticate_token_propagated_to_second_request():
 
 
 @responses_lib.activate
+def test_get_profile_sends_device_params_when_provided():
+    from stb_reader._http import STBSession
+    session = STBSession(BASE_URL, MAC, "TESTSERIAL", "en", "Europe/London", device_id="did1", device_id2="did2")
+    session.token = "tok"
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {}})
+    get_profile(session)
+    qs = _qs(responses_lib.calls[0])
+    assert qs["device_id"][0] == "did1"
+    assert qs["device_id2"][0] == "did2"
+    assert "signature" not in qs
+
+
+@responses_lib.activate
+def test_get_profile_omits_device_params_when_not_provided():
+    from stb_reader._http import STBSession
+    session = STBSession(BASE_URL, MAC, "TESTSERIAL", "en", "Europe/London")
+    session.token = "tok"
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {}})
+    get_profile(session)
+    qs = _qs(responses_lib.calls[0])
+    assert "device_id" not in qs
+    assert "device_id2" not in qs
+    assert "signature" not in qs
+
+
+@responses_lib.activate
 def test_get_profile_applies_refreshed_token():
     from stb_reader._http import STBSession
     session = STBSession(BASE_URL, MAC, "000000000000", "en", "Europe/London")

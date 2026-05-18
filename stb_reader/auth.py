@@ -19,7 +19,12 @@ def handshake(session: "STBSession") -> None:
 
 
 def get_profile(session: "STBSession") -> None:
-    data = session.get("stb", "get_profile")
+    params: dict = {}
+    if session.device_id is not None:
+        params["device_id"] = session.device_id
+    if session.device_id2 is not None:
+        params["device_id2"] = session.device_id2
+    data = session.get("stb", "get_profile", **params)
     token = data.get("token", "")
     if token:
         session.token = token
