@@ -1,5 +1,4 @@
 from __future__ import annotations
-import hashlib
 from typing import TYPE_CHECKING
 from .exceptions import AuthError
 
@@ -23,8 +22,8 @@ def get_profile(session: "STBSession") -> None:
     params: dict = {}
     if session.device_id is not None:
         params["device_id"] = session.device_id
-        params["device_id2"] = hashlib.sha256(session.mac.encode()).hexdigest()
-        params["signature"] = hashlib.sha256((session.serial + session.mac).encode()).hexdigest()
+    if session.device_id2 is not None:
+        params["device_id2"] = session.device_id2
     data = session.get("stb", "get_profile", **params)
     token = data.get("token", "")
     if token:
