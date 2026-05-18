@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from .models import Genre, Channel, PagedResult
 from .exceptions import STBError, StreamError
-from ._http import _as_list, _clean_url
+from ._http import _as_list, _clean_url, _resolve_image_url
 
 if TYPE_CHECKING:
     from ._http import STBSession
@@ -47,7 +47,7 @@ class ITVService:
                 number=str(c.get("number", "")),
                 name=c.get("name", ""),
                 cmd=c.get("cmd", ""),
-                logo=c.get("logo", ""),
+                logo=_resolve_image_url(self._s.base_url, c.get("logo", "")),
                 genre_id=str(c.get("tv_genre_id", "")),
                 hd=bool(c.get("hd", False)),
                 censored=bool(c.get("censored", False)),
@@ -70,7 +70,7 @@ class ITVService:
                 number=str(c.get("number", "")),
                 name=c.get("name", ""),
                 cmd=c.get("cmd", ""),
-                logo=c.get("logo", ""),
+                logo=_resolve_image_url(self._s.base_url, c.get("logo", "")),
                 genre_id=str(c.get("tv_genre_id", "")),
                 hd=bool(c.get("hd", False)),
                 censored=bool(c.get("censored", False)),

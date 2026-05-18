@@ -1,7 +1,7 @@
 import pytest
 import responses as responses_lib
 from stb_reader._http import STBSession
-from stb_reader._http import _clean_url
+from stb_reader._http import _clean_url, _resolve_image_url
 from stb_reader.live_tv import ITVService
 from stb_reader.exceptions import STBError, StreamError
 from tests.conftest import BASE_URL, MAC, PORTAL_URL
@@ -9,6 +9,18 @@ from tests.conftest import BASE_URL, MAC, PORTAL_URL
 
 def _make_session():
     return STBSession(BASE_URL, MAC, "000000000000", "en", "Europe/London")
+
+
+# --- _resolve_image_url ---
+
+def test_resolve_image_url_relative_path():
+    assert _resolve_image_url("http://portal.test", "/stalker_portal/logos/bbc1.png") == "http://portal.test/stalker_portal/logos/bbc1.png"
+
+def test_resolve_image_url_absolute_unchanged():
+    assert _resolve_image_url("http://portal.test", "http://cdn.example.com/logo.png") == "http://cdn.example.com/logo.png"
+
+def test_resolve_image_url_empty_unchanged():
+    assert _resolve_image_url("http://portal.test", "") == ""
 
 
 # --- _clean_url ---
@@ -54,6 +66,18 @@ def test_get_channels_page_translated_to_zero_index():
     svc.get_channels(page=3)
     url = responses_lib.calls[0].request.url
     assert "p=2" in url
+
+
+@responses_lib.activate
+def test_get_channels_resolves_relative_logo():
+    ch = {"id": "10", "number": "5", "name": "CNN", "cmd": "http://x", "logo": "/stalker_portal/logos/cnn.png", "tv_genre_id": "1", "hd": False, "censored": False}
+    responses_lib.add(
+        responses_lib.GET, PORTAL_URL,
+        json={"js": {"data": [ch], "total_items": 1, "max_page_items": 14}},
+    )
+    svc = ITVService(_make_session())
+    result = svc.get_channels()
+    assert result.items[0].logo == "http://portal.test/stalker_portal/logos/cnn.png"
 
 
 @responses_lib.activate

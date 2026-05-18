@@ -28,6 +28,13 @@ def _clean_url(url: str) -> str:
     return url
 
 
+def _resolve_image_url(base_url: str, raw: str) -> str:
+    if not raw or raw.startswith(("http://", "https://")):
+        return raw
+    from urllib.parse import urljoin
+    return urljoin(base_url.rstrip("/") + "/", raw.lstrip("/"))
+
+
 def _is_auth_failure(text: str) -> bool:
     return any(phrase in text for phrase in _AUTH_FAILURE_PHRASES)
 
