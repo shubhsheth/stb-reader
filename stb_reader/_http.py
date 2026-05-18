@@ -33,12 +33,13 @@ def _is_auth_failure(text: str) -> bool:
 
 
 class STBSession:
-    def __init__(self, base_url: str, mac: str, serial: str, lang: str, timezone: str, portal_path: str = "stalker_portal/c/portal.php") -> None:
+    def __init__(self, base_url: str, mac: str, serial: str, lang: str, timezone: str, portal_path: str = "stalker_portal/c/portal.php", device_id: str | None = None) -> None:
         self.base_url = base_url.rstrip("/")
         self.mac = mac
         self.serial = serial
         self.lang = lang
         self.timezone = timezone
+        self.device_id = device_id
         self.portal_path = portal_path.strip("/")
         self.token = ""
         self.extra_headers: dict = {}

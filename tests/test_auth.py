@@ -56,6 +56,35 @@ def test_authenticate_token_propagated_to_second_request():
 
 
 @responses_lib.activate
+def test_get_profile_sends_device_params_when_device_id_provided():
+    import hashlib
+    from stb_reader._http import STBSession
+    serial = "TESTSERIAL"
+    device_id = hashlib.sha256(serial.encode()).hexdigest()
+    session = STBSession(BASE_URL, MAC, serial, "en", "Europe/London", device_id=device_id)
+    session.token = "tok"
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {}})
+    get_profile(session)
+    qs = _qs(responses_lib.calls[0])
+    assert qs["device_id"][0] == device_id
+    assert qs["device_id2"][0] == hashlib.sha256(MAC.encode()).hexdigest()
+    assert qs["signature"][0] == hashlib.sha256((serial + MAC).encode()).hexdigest()
+
+
+@responses_lib.activate
+def test_get_profile_omits_device_params_when_device_id_not_provided():
+    from stb_reader._http import STBSession
+    session = STBSession(BASE_URL, MAC, "TESTSERIAL", "en", "Europe/London")
+    session.token = "tok"
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {}})
+    get_profile(session)
+    qs = _qs(responses_lib.calls[0])
+    assert "device_id" not in qs
+    assert "device_id2" not in qs
+    assert "signature" not in qs
+
+
+@responses_lib.activate
 def test_get_profile_applies_refreshed_token():
     from stb_reader._http import STBSession
     session = STBSession(BASE_URL, MAC, "000000000000", "en", "Europe/London")
