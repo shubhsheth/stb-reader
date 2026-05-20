@@ -54,6 +54,7 @@ class VODService:
                 duration=str(c.get("time", "")),
                 is_series=bool(int(c.get("is_series") or 0)),
                 fav=bool(c.get("fav", False)),
+                category_id=str(c.get("category_id", "")),
             )
             for c in raw.get("data", [])
         ]

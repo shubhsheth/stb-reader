@@ -32,3 +32,8 @@ Repository = "https://github.com/shubhsheth/stb-reader"
 
 [project.optional-dependencies]
 test = ["pytest", "responses", "httpx", "pytest-cov", "twine"]
+
+[dependency-groups]
+dev = [
+    "responses>=0.26.0",
+]

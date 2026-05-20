@@ -777,7 +777,7 @@ wheels = [
 
 [[package]]
 name = "stb-reader"
-version = "0.2.0"
+version = "0.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
@@ -793,6 +793,11 @@ test = [
     { name = "twine" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "responses" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "click" },
@@ -804,6 +809,9 @@ requires-dist = [
     { name = "twine", marker = "extra == 'test'" },
 ]
 provides-extras = ["test"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "responses", specifier = ">=0.26.0" }]
 
 [[package]]
 name = "tomli"
