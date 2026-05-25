@@ -45,8 +45,8 @@ def seasons_cmd(series_id: str) -> None:
     """List seasons for a series."""
     try:
         client = get_client()
-        seasons = client.vod.get_seasons(series_id)
-        print_table(["ID", "Name"], [[s.id, s.name] for s in seasons])
+        result = client.vod.get_seasons(series_id)
+        print_table(["ID", "Name"], [[s.id, s.name] for s in result.items])
     except STBError as e:
         raise click.ClickException(str(e))
 

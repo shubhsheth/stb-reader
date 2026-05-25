@@ -40,11 +40,11 @@ content = client.vod.get_content(category_id="*", page=1)
 
 # Series
 seasons = client.vod.get_seasons(series_id="123")
-episodes = client.vod.get_episodes(series_id="123", season_id=seasons[0].id)
+episodes = client.vod.get_episodes(series_id="123", season_id=seasons.items[0].id)
 stream_url = client.vod.get_stream_url_by_first_file(
     series_id="123",
-    season_id=seasons[0].id,
-    episode_id=episodes[0].id,
+    season_id=seasons.items[0].id,
+    episode_id=episodes.items[0].id,
 )
 ```
 
