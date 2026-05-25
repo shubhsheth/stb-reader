@@ -55,8 +55,8 @@ url      = client.live_tv.get_stream_url(channels.items[0].cmd)
 cats     = client.vod.get_categories()
 content  = client.vod.get_content(category_id="*", page=1)
 seasons  = client.vod.get_seasons(series_id="123")
-episodes = client.vod.get_episodes(series_id="123", season_id=seasons[0].id)
-url      = client.vod.get_stream_url_by_first_file("123", seasons[0].id, episodes[0].id)
+episodes = client.vod.get_episodes(series_id="123", season_id=seasons.items[0].id)
+url      = client.vod.get_stream_url_by_first_file("123", seasons.items[0].id, episodes.items[0].id)
 ```
 
 All models and exceptions are importable directly from `stb_reader`:
