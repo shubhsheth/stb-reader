@@ -123,9 +123,11 @@ For channels and VOD content you manage pacing yourself.
 |--------|---------|
 | `client.live_tv.get_channels(...)` | `PagedResult[Channel]` |
 | `client.vod.get_content(...)` | `PagedResult[Content]` |
+| `client.vod.get_seasons(...)` | `PagedResult[Season]` |
+| `client.vod.get_episodes(...)` | `PagedResult[Episode]` |
 
-All other methods (`get_genres`, `get_categories`, `get_seasons`, `get_episodes`,
-`get_episode_files`) return plain lists and fetch all results automatically.
+All other methods (`get_genres`, `get_categories`, `get_episode_files`)
+return plain lists and fetch all results automatically.
 
 ---
 

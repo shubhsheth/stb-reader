@@ -116,13 +116,14 @@ def test_get_seasons_returns_list(session):
         json={"js": {"data": [{"id": "1", "name": "Season 1", "video_id": "200"}]}},
     )
     svc = VODService(session)
-    seasons = svc.get_seasons("50")
-    assert len(seasons) == 1
-    assert seasons[0].name == "Season 1"
+    result = svc.get_seasons("50")
+    assert len(result.items) == 1
+    assert result.items[0].name == "Season 1"
     url = responses_lib.calls[0].request.url
     assert "movie_id=50" in url
     assert "season_id=0" in url
     assert "episode_id=0" in url
+    assert "p=1" in url
 
 
 @responses_lib.activate
@@ -133,9 +134,9 @@ def test_get_seasons_exposes_season_number_and_episode_count(session):
                                 "season_number": "3", "season_series": 51}]}},
     )
     svc = VODService(session)
-    seasons = svc.get_seasons("50")
-    assert seasons[0].season_number == "3"
-    assert seasons[0].episode_count == 51
+    result = svc.get_seasons("50")
+    assert result.items[0].season_number == "3"
+    assert result.items[0].episode_count == 51
 
 
 @responses_lib.activate
@@ -145,9 +146,21 @@ def test_get_seasons_defaults_when_fields_absent(session):
         json={"js": {"data": [{"id": "1", "name": "Season 1", "video_id": "200"}]}},
     )
     svc = VODService(session)
-    seasons = svc.get_seasons("50")
-    assert seasons[0].season_number == ""
-    assert seasons[0].episode_count == 0
+    result = svc.get_seasons("50")
+    assert result.items[0].season_number == ""
+    assert result.items[0].episode_count == 0
+
+
+@responses_lib.activate
+def test_get_seasons_passes_page_param(session):
+    responses_lib.add(
+        responses_lib.GET, PORTAL_URL,
+        json={"js": {"data": [], "total_items": 10, "max_page_items": 14}},
+    )
+    svc = VODService(session)
+    result = svc.get_seasons("50", page=3)
+    assert result.page == 3
+    assert "p=3" in responses_lib.calls[0].request.url
 
 
 # --- get_episodes ---

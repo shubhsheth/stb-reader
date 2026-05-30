@@ -6,7 +6,7 @@ you can get a stream URL.
 
 ```
 get_content()         →  Content (is_series=True)
-  get_seasons()       →  list[Season]
+  get_seasons()       →  PagedResult[Season]
     get_episodes()    →  list[Episode]
       get_episode_files()  →  list[EpisodeFile]   (optional: for quality selection)
         get_stream_url_by_file_id()  →  str
@@ -32,21 +32,22 @@ See [VOD guide](./vod.md) for the full `get_content()` reference.
 
 ## Step 2 — Get seasons
 
-### `get_seasons(series_id)`
+### `get_seasons(series_id, page=1)`
 
 ```python
-seasons = client.vod.get_seasons(series_id="202")
-for season in seasons:
+season_list = client.vod.get_seasons(series_id="202", page=1).items
+for season in season_list:
     print(f"Season {season.id}: {season.name}")
 ```
 
 **Parameters:**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `series_id` | `str` | The `id` from a `Content` object where `is_series=True` |
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `series_id` | `str` | required | The `id` from a `Content` object where `is_series=True` |
+| `page` | `int` | `1` | Page number for pagination |
 
-**Returns:** `list[Season]`
+**Returns:** `PagedResult[Season]`
 
 #### Season fields
 
@@ -209,11 +210,11 @@ show = series_list[0]
 print(f"Selected: {show.name} ({show.year})")
 
 # 2. List seasons
-seasons = client.vod.get_seasons(series_id=show.id)
-for season in seasons:
+season_list = client.vod.get_seasons(series_id=show.id, page=1).items
+for season in season_list:
     print(f"  {season.name} (id={season.id})")
 
-season = seasons[0]
+season = season_list[0]
 
 # 3. List episodes
 episodes = client.vod.get_episodes(series_id=show.id, season_id=season.id)

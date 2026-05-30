@@ -64,15 +64,18 @@ class VODService:
             per_page=int(raw.get("max_page_items", len(items))),
         )
 
-    def get_seasons(self, series_id: str) -> list[Season]:
+    def get_seasons(
+        self, series_id: str, page: int = 1
+    ) -> PagedResult[Season]:
         raw = self._s.get(
             "vod",
             "get_ordered_list",
             movie_id=series_id,
             season_id=0,
             episode_id=0,
+            p=page,
         )
-        return [
+        items = [
             Season(
                 id=str(s["id"]),
                 name=s.get("name", ""),
@@ -82,6 +85,12 @@ class VODService:
             )
             for s in raw.get("data", [])
         ]
+        return PagedResult(
+            items=items,
+            total=int(raw.get("total_items", 0)),
+            page=page,
+            per_page=int(raw.get("max_page_items", len(items))),
+        )
 
     def get_episodes(self, series_id: str, season_id: str, page: int = 1) -> PagedResult[Episode]:
         raw = self._s.get(
