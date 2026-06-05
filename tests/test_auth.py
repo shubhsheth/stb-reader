@@ -82,6 +82,18 @@ def test_get_profile_omits_device_params_when_not_provided():
 
 
 @responses_lib.activate
+def test_get_profile_omits_device_params_when_empty_string():
+    from stb_reader._http import STBSession
+    session = STBSession(BASE_URL, MAC, "TESTSERIAL", "en", "Europe/London", device_id="", device_id2="")
+    session.token = "tok"
+    responses_lib.add(responses_lib.GET, _portal_url(), json={"js": {}})
+    get_profile(session)
+    qs = _qs(responses_lib.calls[0])
+    assert "device_id" not in qs
+    assert "device_id2" not in qs
+
+
+@responses_lib.activate
 def test_get_profile_applies_refreshed_token():
     from stb_reader._http import STBSession
     session = STBSession(BASE_URL, MAC, "000000000000", "en", "Europe/London")
