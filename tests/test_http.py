@@ -1,8 +1,9 @@
+import click
 import pytest
 import responses as responses_lib
-from stb_reader._http import STBSession
+from stb_reader._http import STBSession, _reauth_local
 from stb_reader.exceptions import AuthError, STBError
-from tests.conftest import BASE_URL, MAC, LANG, TIMEZONE, PORTAL_URL
+from tests.conftest import BASE_URL, MAC, SERIAL, LANG, TIMEZONE, PORTAL_URL
 
 
 def test_correct_url(mocked, session):
@@ -106,3 +107,86 @@ def test_reauth_raises_auth_error_when_reauth_itself_fails(mocked, session):
     mocked.add(responses_lib.GET, PORTAL_URL, body="Authorization failed. 75")  # reauth's handshake
     with pytest.raises(AuthError):
         session.get("stb", "some_action")
+
+
+def test_audit_mode_off_by_default(mocked, session, monkeypatch):
+    confirm_calls = []
+    monkeypatch.setattr(click, "confirm", lambda *a, **k: confirm_calls.append(1) or True)
+    mocked.add(responses_lib.GET, PORTAL_URL, json={"js": {"result": "ok"}})
+    result = session.get("stb", "handshake")
+    assert result == {"result": "ok"}
+    assert session.audit_mode is False
+    assert confirm_calls == []
+
+
+def test_audit_mode_includes_stb_requests(mocked, monkeypatch):
+    session = STBSession(BASE_URL, MAC, SERIAL, LANG, TIMEZONE, audit_mode=True)
+    confirm_calls = []
+    monkeypatch.setattr(click, "confirm", lambda *a, **k: confirm_calls.append(1) or True)
+    mocked.add(responses_lib.GET, PORTAL_URL, json={"js": {"token": "abc"}})
+    result = session.get("stb", "handshake")
+    assert result == {"token": "abc"}
+    assert len(confirm_calls) == 1
+
+
+def test_audit_mode_prints_request_block(mocked, monkeypatch, capsys):
+    session = STBSession(BASE_URL, MAC, SERIAL, LANG, TIMEZONE, audit_mode=True)
+    monkeypatch.setattr(click, "confirm", lambda *a, **k: True)
+    mocked.add(responses_lib.GET, PORTAL_URL, json={"js": {"data": []}})
+    session.get("vod", "get_ordered_list", category="5")
+    out = capsys.readouterr().out
+    assert "--- Audit: Outgoing Request ---" in out
+    assert PORTAL_URL in out
+    assert "type:   vod" in out
+    assert "action: get_ordered_list" in out
+    assert "category=5" in out
+
+
+def test_audit_mode_prints_response_block(mocked, monkeypatch, capsys):
+    session = STBSession(BASE_URL, MAC, SERIAL, LANG, TIMEZONE, audit_mode=True)
+    monkeypatch.setattr(click, "confirm", lambda *a, **k: True)
+    mocked.add(responses_lib.GET, PORTAL_URL, json={"js": {"foo": "bar"}})
+    session.get("vod", "get_categories")
+    out = capsys.readouterr().out
+    assert "--- Audit: Raw STB Response ---" in out
+    assert '"js"' in out
+    assert '"foo": "bar"' in out
+
+
+def test_audit_mode_abort_on_no(mocked, monkeypatch):
+    session = STBSession(BASE_URL, MAC, SERIAL, LANG, TIMEZONE, audit_mode=True)
+    monkeypatch.setattr(click, "confirm", lambda *a, **k: False)
+    with pytest.raises(click.exceptions.Abort):
+        session.get("vod", "get_categories")
+    assert len(mocked.calls) == 0
+
+
+def test_audit_mode_token_not_in_output(mocked, monkeypatch, capsys):
+    session = STBSession(BASE_URL, MAC, SERIAL, LANG, TIMEZONE, audit_mode=True)
+    session.token = "secret123"
+    monkeypatch.setattr(click, "confirm", lambda *a, **k: True)
+    mocked.add(responses_lib.GET, PORTAL_URL, json={"js": {}})
+    session.get("vod", "get_categories")
+    out = capsys.readouterr().out
+    assert "secret123" not in out
+    assert "token:  [set]" in out
+
+
+def test_audit_mode_abort_during_reauth_propagates(mocked, monkeypatch):
+    session = STBSession(BASE_URL, MAC, SERIAL, LANG, TIMEZONE, audit_mode=True)
+
+    confirms = iter([True, False])
+    monkeypatch.setattr(click, "confirm", lambda *a, **k: next(confirms))
+
+    def reauth():
+        session.get("stb", "handshake")
+
+    session.reauth_fn = reauth
+    mocked.add(responses_lib.GET, PORTAL_URL, body="Authorization failed. 75")  # original call
+
+    with pytest.raises(click.exceptions.Abort):
+        session.get("vod", "get_categories")
+
+    assert len(mocked.calls) == 1
+    assert not session._reauth_lock.locked()
+    assert not getattr(_reauth_local, "active", False)
