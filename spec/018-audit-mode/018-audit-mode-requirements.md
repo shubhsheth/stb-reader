@@ -24,7 +24,7 @@ CLI-only feature. No changes to library public API surface. No changes to `live.
 
 ### FR-2: Request Interception (before sending)
 
-For every call to `STBSession.get()` where `type_ != "stb"`:
+For every call to `STBSession.get()`, including auth requests (`type_="stb"`: handshake, get_profile, and reauth triggered mid-request):
 
 1. Print a labelled block showing:
    - Full portal URL
@@ -32,8 +32,6 @@ For every call to `STBSession.get()` where `type_ != "stb"`:
    - All user-supplied params (everything except `JsHttpRequest`, `type`, `action`)
    - Token presence (`[set]` or `[not set]`) — never print the raw token value
 2. Prompt: `Send this request? [Y/n]`
-
-**Auth requests excluded**: Calls with `type_="stb"` (handshake, get_profile) are internal plumbing and must never be intercepted.
 
 ### FR-3: Abort path
 
@@ -58,9 +56,9 @@ Audit mode must propagate from the CLI flag to `STBSession` without requiring ch
 
 All existing behavior (output, exit codes, error handling) must be identical when `--audit` is not passed.
 
-### NFR-2: Auth requests always fire silently
+### NFR-2: Reauth aborts propagate cleanly
 
-`handshake` and `get_profile` must never be shown or blocked by audit mode, even when `--audit` is active.
+If a denied prompt occurs during a reauth-triggered handshake/get_profile (mid-request retry), the resulting `Abort` must propagate cleanly out of `STBSession.get()` without leaving the session in a locked or inconsistent state (the existing `_reauth_lock`/`finally` handling already covers this).
 
 ### NFR-3: Token privacy
 
@@ -72,5 +70,4 @@ The raw Bearer token value must never appear in audit output. Display `[set]` / 
 
 - Logging audit output to a file
 - Auditing `open_url()` or `open_stream()` (stream fetches, not portal API calls)
-- Auditing auth requests
 - Any UI beyond the terminal (no TUI, no pager)

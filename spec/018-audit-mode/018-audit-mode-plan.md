@@ -12,10 +12,10 @@
 - Add module-level helpers `_print_audit_request(url, query, token)` and `_print_audit_response(raw)`.
 - In `STBSession.get()`:
   - After headers/cookies are assembled, before `self._session.get(...)`:
-    - If `self.audit_mode and type_ != "stb"`: call `_print_audit_request`, then `click.confirm`; raise `Abort` if denied.
+    - If `self.audit_mode`: call `_print_audit_request`, then `click.confirm`; raise `Abort` if denied. Applies to ALL requests, including `type_="stb"` (handshake/get_profile) and reauth retries.
   - Parse response into `raw = resp.json()` (store once, avoid double-parse).
   - After auth/error checks, before returning:
-    - If `self.audit_mode and type_ != "stb"`: call `_print_audit_response(raw)`.
+    - If `self.audit_mode`: call `_print_audit_response(raw)`.
   - Return `raw["js"]`.
 
 **Helper output format:**
@@ -37,9 +37,10 @@ token:  [set]|[not set]
 
 **Acceptance criteria:**
 - `STBSession(audit_mode=True).get("vod", "get_categories")` prints request block, prompts, prints response block.
-- `STBSession(audit_mode=True).get("stb", "handshake")` prints nothing, prompts nothing.
+- `STBSession(audit_mode=True).get("stb", "handshake")` also prints request block, prompts, prints response block (no exclusion).
 - `STBSession(audit_mode=False).get(...)` has identical behavior to current code.
 - Deny prompt → `click.exceptions.Abort` raised, no HTTP request sent.
+- Deny during a reauth-triggered retry propagates `Abort` cleanly (lock released, `_reauth_local.active` reset via existing `finally`).
 
 **Verify:** `pytest tests/test_http.py`
 
@@ -122,11 +123,12 @@ client = STBClient(**kwargs, audit_mode=audit_mode)
 | Test | What it checks |
 |------|---------------|
 | `test_audit_mode_off_by_default` | `STBSession` with default args: no prompt, returns `js` normally |
-| `test_audit_mode_skips_stb_requests` | `audit_mode=True`, `type_="stb"`: no `click.confirm` call, no audit output |
+| `test_audit_mode_includes_stb_requests` | `audit_mode=True`, `type_="stb"`: `click.confirm` is called, audit output printed (no exclusion) |
 | `test_audit_mode_prints_request_block` | `audit_mode=True`, `type_="vod"`, confirm=True: output contains URL, type, action |
 | `test_audit_mode_prints_response_block` | confirm=True: output contains `"js"` key from raw JSON |
 | `test_audit_mode_abort_on_no` | confirm=False: `click.exceptions.Abort` raised, zero HTTP calls made |
 | `test_audit_mode_token_not_in_output` | token value `"secret123"` does not appear in audit output |
+| `test_audit_mode_abort_during_reauth_propagates` | reauth-triggered handshake denied mid-request: `Abort` propagates, lock/active flag reset |
 
 Use `monkeypatch` to patch `click.confirm` and `click.echo`. Use `responses` fixture for HTTP mocking (already in conftest).
 
