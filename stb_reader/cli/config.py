@@ -44,7 +44,16 @@ def get_client() -> STBClient:
     for key in ("serial", "lang", "timezone", "portal_path", "device_id", "device_id2"):
         if key in cfg:
             kwargs[key] = cfg[key]
-    client = STBClient(**kwargs)
+
+    audit_mode = False
+    try:
+        ctx = click.get_current_context()
+        if ctx.obj:
+            audit_mode = ctx.find_root().obj.get("audit", False)
+    except RuntimeError:
+        pass  # no active Click context (e.g. direct library use or tests)
+
+    client = STBClient(**kwargs, audit_mode=audit_mode)
 
     def _auth_and_save() -> None:
         client.authenticate()

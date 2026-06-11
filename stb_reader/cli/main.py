@@ -7,9 +7,12 @@ from .vod import vod
 
 @click.group()
 @click.option("--debug", is_flag=True, default=False, help="Print raw portal responses to stderr.")
+@click.option("--audit", is_flag=True, default=False, help="Intercept and confirm each portal request before sending.")
 @click.pass_context
-def main(ctx: click.Context, debug: bool) -> None:
+def main(ctx: click.Context, debug: bool, audit: bool) -> None:
     """STB portal CLI."""
+    ctx.ensure_object(dict)
+    ctx.obj["audit"] = audit
     if debug:
         logging.basicConfig(level=logging.DEBUG, format="%(message)s")
 
