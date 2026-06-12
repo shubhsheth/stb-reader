@@ -15,8 +15,9 @@ class STBClient:
         portal_path: str = "stalker_portal/c/portal.php",
         device_id: str | None = None,
         device_id2: str | None = None,
+        audit_mode: bool = False,
     ) -> None:
-        self._session = STBSession(base_url, mac, serial, lang, timezone, portal_path, device_id, device_id2)
+        self._session = STBSession(base_url, mac, serial, lang, timezone, portal_path, device_id, device_id2, audit_mode=audit_mode)
         self._session.reauth_fn = self.authenticate
         self.live_tv = ITVService(self._session)
         self.vod = VODService(self._session)

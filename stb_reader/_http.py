@@ -1,7 +1,9 @@
+import json
 import logging
 import threading
 from collections.abc import Callable
 from urllib.parse import urlparse
+import click
 import requests
 from .exceptions import AuthError, STBError, StreamError
 
@@ -39,8 +41,25 @@ def _is_auth_failure(text: str) -> bool:
     return any(phrase in text for phrase in _AUTH_FAILURE_PHRASES)
 
 
+def _print_audit_request(url: str, query: dict, token: str) -> None:
+    user_params = {k: v for k, v in query.items() if k not in ("JsHttpRequest", "type", "action")}
+    click.echo("--- Audit: Outgoing Request ---")
+    click.echo(f"URL:    {url}")
+    click.echo(f"type:   {query['type']}")
+    click.echo(f"action: {query['action']}")
+    if user_params:
+        click.echo(f"params: {', '.join(f'{k}={v}' for k, v in user_params.items())}")
+    click.echo(f"token:  {'[set]' if token else '[not set]'}")
+
+
+def _print_audit_response(raw: dict) -> None:
+    click.echo("--- Audit: Raw STB Response ---")
+    click.echo(json.dumps(raw, indent=2))
+    click.echo("--- End Audit Response ---")
+
+
 class STBSession:
-    def __init__(self, base_url: str, mac: str, serial: str, lang: str, timezone: str, portal_path: str = "stalker_portal/c/portal.php", device_id: str | None = None, device_id2: str | None = None) -> None:
+    def __init__(self, base_url: str, mac: str, serial: str, lang: str, timezone: str, portal_path: str = "stalker_portal/c/portal.php", device_id: str | None = None, device_id2: str | None = None, audit_mode: bool = False) -> None:
         self.base_url = base_url.rstrip("/")
         self.mac = mac
         self.serial = serial
@@ -49,6 +68,7 @@ class STBSession:
         self.device_id = device_id
         self.device_id2 = device_id2
         self.portal_path = portal_path.strip("/")
+        self.audit_mode = audit_mode
         self.token = ""
         self.extra_headers: dict = {}
         self.reauth_fn: Callable[[], None] | None = None
@@ -70,6 +90,10 @@ class STBSession:
         query = {"JsHttpRequest": "1-xml", "type": type_, "action": action, **params}
         self._cookies["token"] = self.token
         headers = {**self._base_headers, "Authorization": f"Bearer {self.token}", **self.extra_headers}
+        if self.audit_mode:
+            _print_audit_request(url, query, self.token)
+            if not click.confirm("Send this request?", default=True):
+                raise click.exceptions.Abort()
         resp = self._session.get(url, params=query, headers=headers, cookies=self._cookies, timeout=_REQUEST_TIMEOUT)
         logger.debug("Response [%s %s]: %s", resp.status_code, action, resp.text)
         if not resp.ok:
@@ -86,9 +110,13 @@ class STBSession:
                 return self.get(type_, action, _retry=True, **params)
             raise AuthError(f"Portal rejected request ({action}): {resp.text[:100]}")
         try:
-            return resp.json()["js"]
+            raw = resp.json()
+            js = raw["js"]
         except (KeyError, ValueError):
             raise STBError(f"Invalid JSON response (status {resp.status_code}): {resp.text[:200]}")
+        if self.audit_mode:
+            _print_audit_response(raw)
+        return js
 
     def open_url(self, url: str) -> requests.Response:
         """Fetch a full URL for streaming (no portal auth needed, e.g. CDN URLs)."""
