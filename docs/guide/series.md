@@ -32,11 +32,11 @@ See [VOD guide](./vod.md) for the full `get_content()` reference.
 
 ## Step 2 — Get seasons
 
-### `get_seasons(series_id)`
+### `get_seasons(series_id, page=1)`
 
 ```python
-seasons = client.vod.get_seasons(series_id="202")
-for season in seasons:
+result = client.vod.get_seasons(series_id="202")
+for season in result.items:
     print(f"Season {season.id}: {season.name}")
 ```
 
@@ -209,11 +209,11 @@ show = series_list[0]
 print(f"Selected: {show.name} ({show.year})")
 
 # 2. List seasons
-seasons = client.vod.get_seasons(series_id=show.id)
-for season in seasons:
+result = client.vod.get_seasons(series_id=show.id)
+for season in result.items:
     print(f"  {season.name} (id={season.id})")
 
-season = seasons[0]
+season = result.items[0]
 
 # 3. List episodes
 episodes = client.vod.get_episodes(series_id=show.id, season_id=season.id)

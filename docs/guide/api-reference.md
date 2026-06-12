@@ -131,13 +131,14 @@ Returns a paginated list of movies and series.
 
 ---
 
-### `get_seasons(series_id) -> list[Season]`
+### `get_seasons(series_id, page=1) -> PagedResult[Season]`
 
-Returns all seasons for a series.
+Returns seasons for a series, with pagination support.
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `series_id` | `str` | The `id` from a `Content` object where `is_series=True` |
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `series_id` | `str` | required | The `id` from a `Content` object where `is_series=True` |
+| `page` | `int` | `1` | Page number for pagination |
 
 **Raises:** `STBError` on portal communication failure.
 
